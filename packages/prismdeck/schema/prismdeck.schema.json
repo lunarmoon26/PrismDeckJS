@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prismdeckjs.dev/schema/prismdeck-0.1.0.json",
+  "title": "PrismDeck document",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "kind", "metadata", "size", "layouts", "slides"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "$ref": "#/$defs/id" },
+    "kind": { "enum": ["presentation", "template"] },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "modifiedAt": { "type": "string" },
+        "sourceFormat": { "enum": ["pptx", "odp", "prismdeck", "native"] }
+      }
+    },
+    "size": { "$ref": "#/$defs/size" },
+    "layouts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/layout" }
+    },
+    "slides": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/slide" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number", "minimum": 0 },
+        "height": { "type": "number", "minimum": 0 }
+      }
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["z", "rotationX", "rotationY", "rotationZ", "scaleX", "scaleY"],
+      "properties": {
+        "z": { "type": "number" },
+        "rotationX": { "type": "number" },
+        "rotationY": { "type": "number" },
+        "rotationZ": { "type": "number" },
+        "scaleX": { "type": "number" },
+        "scaleY": { "type": "number" }
+      }
+    },
+    "physics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body", "shape", "density", "restitution", "friction"],
+      "properties": {
+        "body": { "enum": ["fixed", "dynamic", "kinematic", "sensor"] },
+        "shape": { "enum": ["cuboid", "ball"] },
+        "density": { "type": "number", "minimum": 0 },
+        "restitution": { "type": "number", "minimum": 0, "maximum": 1 },
+        "friction": { "type": "number", "minimum": 0, "maximum": 2 }
+      }
+    },
+    "element": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "type", "name", "frame", "transform", "opacity", "visible", "renderOrder"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "enum": ["text", "image", "shape", "table", "chart", "unsupported"] },
+        "name": { "type": "string" },
+        "frame": { "$ref": "#/$defs/frame" },
+        "transform": { "$ref": "#/$defs/transform" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "visible": { "type": "boolean" },
+        "renderOrder": { "type": "integer" },
+        "thickness": { "type": "number", "minimum": 0 },
+        "physics": { "$ref": "#/$defs/physics" }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "elements"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string" },
+        "elements": { "type": "array", "items": { "$ref": "#/$defs/element" } }
+      }
+    },
+    "slide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "durationMs", "background", "elements"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string" },
+        "layoutId": { "$ref": "#/$defs/id" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "background": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" },
+        "notes": { "type": "string" },
+        "elements": { "type": "array", "items": { "$ref": "#/$defs/element" } }
+      }
+    }
+  }
+}

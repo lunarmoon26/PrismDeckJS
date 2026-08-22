@@ -1,0 +1,52 @@
+{
+  "name": "prismdeckjs",
+  "version": "0.1.0",
+  "description": "Browser-native spatial presentation SDK",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://lunarmoon26.github.io/PrismDeckJS/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lunarmoon26/PrismDeckJS.git",
+    "directory": "packages/prismdeck"
+  },
+  "bugs": {
+    "url": "https://github.com/lunarmoon26/PrismDeckJS/issues"
+  },
+  "keywords": [
+    "presentation",
+    "pptx",
+    "odp",
+    "three.js",
+    "stereo",
+    "browser"
+  ],
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema": "./schema/prismdeck.schema.json"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aiden0z/pptx-renderer": "1.2.4",
+    "@dimforge/rapier3d-compat": "0.20.0",
+    "ajv": "^8.17.1",
+    "fflate": "^0.8.2",
+    "three": "0.185.1"
+  }
+}
