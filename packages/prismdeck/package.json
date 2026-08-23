@@ -24,10 +24,16 @@
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "unpkg": "./dist/prism-deck.min.js",
+  "jsdelivr": "./dist/prism-deck.min.js",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/prism-deck.min.js"
     },
     "./schema": "./schema/prismdeck.schema.json"
   },
@@ -37,7 +43,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "vite build --config vite.browser.config.ts && tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -48,5 +54,8 @@
     "ajv": "^8.17.1",
     "fflate": "^0.8.2",
     "three": "0.185.1"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0"
   }
 }

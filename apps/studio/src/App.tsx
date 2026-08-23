@@ -3,10 +3,12 @@ import {
   OUTPUT_PRESETS,
   importPresentation,
   savePrismDeck,
+  savePrismDeckHtml,
   type DeckElement,
   type ElementPhysics,
   type ElementTransform,
   type ImportReport,
+  type LoadedDeck,
   type OutputMode,
   type SessionChangeDetail,
 } from 'prismdeckjs';
@@ -36,6 +38,15 @@ function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Canvas capture failed'))), 'image/png');
   });
+}
+
+function snapshotSession(session: DeckPlayer['session']): LoadedDeck {
+  return {
+    document: structuredClone(session.document),
+    assets: new Map(
+      Array.from(session.assets, ([id, asset]) => [id, { ...asset, data: Uint8Array.from(asset.data) }]),
+    ),
+  };
 }
 
 function elementLabel(element: DeckElement): string {
@@ -275,17 +286,24 @@ export function App() {
     const savedEditSequence = editSequence.current;
     setError(undefined);
     try {
-      const snapshot = {
-        document: structuredClone(session.document),
-        assets: new Map(
-          Array.from(session.assets, ([id, asset]) => [id, { ...asset, data: Uint8Array.from(asset.data) }]),
-        ),
-      };
-      const blob = await savePrismDeck(snapshot);
+      const blob = await savePrismDeck(snapshotSession(session));
       downloadBlob(blob, `${safeName(session.document.metadata.title)}.prismdeck`);
       if (savedEditSequence === editSequence.current) updateDirty(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save this deck');
+    }
+  }
+
+  async function exportHtml(): Promise<void> {
+    if (!session) return;
+    const savedEditSequence = editSequence.current;
+    setError(undefined);
+    try {
+      const blob = await savePrismDeckHtml(snapshotSession(session));
+      downloadBlob(blob, `${safeName(session.document.metadata.title)}.html`);
+      if (savedEditSequence === editSequence.current) updateDirty(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not export this deck');
     }
   }
 
@@ -326,7 +344,7 @@ export function App() {
         <div className="topbar__actions">
           <span className="local-badge"><span /> Files stay here</span>
           <label className="button button--primary file-button">
-            <input type="file" accept=".pptx,.odp,.prismdeck" onChange={(event) => void importFile(event)} />
+            <input type="file" accept=".pptx,.odp,.prismdeck,.html,.htm" onChange={(event) => void importFile(event)} />
             Import deck
           </label>
           <button
@@ -337,6 +355,9 @@ export function App() {
             onClick={() => void saveDeck()}
           >
             Save package{dirty && <i className="save-dirty-dot" aria-hidden="true" />}
+          </button>
+          <button className="button" type="button" disabled={!player} onClick={() => void exportHtml()}>
+            Export HTML
           </button>
         </div>
       </header>

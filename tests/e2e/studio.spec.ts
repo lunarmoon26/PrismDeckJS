@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
 test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
@@ -29,5 +30,22 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   await page.getByRole('button', { name: /Add slide/ }).click();
   await expect(page.locator('.slide-card')).toHaveCount(2);
   await expect(page.locator('.save-dirty-dot')).toBeVisible();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export HTML' }).click();
+  const download = await downloadPromise;
+  const downloadPath = await download.path();
+  expect(download.suggestedFilename()).toBe('Spatial-ideas-clearly-presented.html');
+  expect(downloadPath).toBeTruthy();
+  const html = await readFile(downloadPath!, 'utf8');
+  expect(html).toContain('type="application/vnd.prismdeck+zip;base64"');
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'round-trip.html',
+    mimeType: 'text/html',
+    buffer: Buffer.from(html),
+  });
+  await expect(page.locator('.stage-message')).toBeHidden();
+  await expect(page.locator('.slide-card')).toHaveCount(2);
   expect(consoleErrors).toEqual([]);
 });

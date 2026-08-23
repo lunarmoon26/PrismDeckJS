@@ -186,6 +186,8 @@ select, input[type="number"], textarea { border: 1px solid #d2cac2; background: 
 
 @media (max-width: 520px) {
   .brand small { display: none; }
+  .topbar__actions { gap: 4px; }
+  .topbar__actions .button { padding: 7px 6px; font-size: 7px; }
   .stage-toolbar__meta span, .stage-toolbar__meta button:last-child { display: none; }
   .stage-column { height: 520px; min-height: 520px; }
   .transport { grid-template-columns: 1fr auto; }

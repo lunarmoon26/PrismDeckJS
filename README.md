@@ -13,6 +13,7 @@ protocol, package format, or application code with either project.
 
 - Import `.pptx`, zero-slide PowerPoint templates, and a focused `.odp` subset locally in the browser.
 - Normalize imported content into a versioned `.prismdeck` JSON and asset bundle.
+- Export one HTML file containing the editable deck and assets with Three.js playback.
 - Render one authoritative scene in mono, full SBS, or half SBS.
 - Edit per-element depth, rotation, thickness, text placeholders, and physics settings.
 - Create a slide from an imported PowerPoint layout.
@@ -39,6 +40,25 @@ const player = await DeckPlayer.create(canvas, deck, {
 `player.dispose()` to release WebGL, textures, animation frames, and Rapier WASM
 resources.
 
+## Single-file HTML
+
+```ts
+import { savePrismDeckHtml } from 'prismdeckjs';
+
+const html = await savePrismDeckHtml(deck);
+```
+
+The HTML embeds the complete validated `.prismdeck` archive and imports the
+version-matched `prism-deck.min.js` browser module from jsDelivr. Studio can
+re-import the HTML for editing. Presentation data stays in the file; viewing
+requires network access to the CDN. See [`docs/html-export.md`](docs/html-export.md).
+
+The browser module is also available directly:
+
+```js
+import * as PrismDeck from 'https://cdn.jsdelivr.net/npm/prismdeckjs@latest/dist/prism-deck.min.js';
+```
+
 | Output | Canvas | Per-eye logical projection |
 | --- | ---: | ---: |
 | Mono | 1920 × 1080 | 16:9 |
@@ -60,11 +80,21 @@ npm install
 npm run dev
 npm run check
 npm run test:e2e
+npm run export:html -- examples/deepseek-harness/deck.json generated/deck.html
 ```
 
 The Dickinson College sample files are optional local compatibility inputs and
 are not redistributed by this repository. See
 [`docs/import-compatibility.md`](docs/import-compatibility.md).
+
+Run DeepSeek Harness from the repository root with either `dsh web` or
+`dsh --profile headless "Create a presentation about …"`. Harness loads
+`AGENTS.md`; its deck-generation path writes validated JSON and the produced HTML
+under `generated/`.
+
+Publishing a GitHub release runs `.github/workflows/npm-publish.yml`. The
+repository requires an Actions secret named `NPM_TOKEN` with publish access to
+`prismdeckjs`.
 
 ## Repository map
 

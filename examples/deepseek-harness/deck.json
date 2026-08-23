@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "harness-example",
+  "kind": "presentation",
+  "metadata": {
+    "title": "Harness-generated deck",
+    "author": "DeepSeek Harness",
+    "sourceFormat": "native"
+  },
+  "size": { "width": 1600, "height": 900 },
+  "layouts": [],
+  "slides": [
+    {
+      "id": "slide-title",
+      "name": "Title",
+      "durationMs": 5000,
+      "background": "#F3EFE8",
+      "elements": [
+        {
+          "id": "title",
+          "type": "text",
+          "name": "Presentation title",
+          "frame": { "x": 0.08, "y": 0.22, "width": 0.72, "height": 0.3 },
+          "transform": { "z": 0.1, "rotationX": 0, "rotationY": 2, "rotationZ": 0, "scaleX": 1, "scaleY": 1 },
+          "opacity": 1,
+          "visible": true,
+          "renderOrder": 1,
+          "thickness": 0.05,
+          "text": "A clear story in spatial slides",
+          "style": { "fontFamily": "Arial, sans-serif", "fontSize": 0.075, "fontWeight": 700, "fontStyle": "normal", "color": "#171311", "align": "left", "verticalAlign": "middle", "lineHeight": 1.05 }
+        }
+      ]
+    },
+    {
+      "id": "slide-points",
+      "name": "Key points",
+      "durationMs": 5000,
+      "background": "#171311",
+      "elements": [
+        {
+          "id": "points-title",
+          "type": "text",
+          "name": "Slide title",
+          "frame": { "x": 0.08, "y": 0.1, "width": 0.65, "height": 0.14 },
+          "transform": { "z": 0.06, "rotationX": 0, "rotationY": 0, "rotationZ": 0, "scaleX": 1, "scaleY": 1 },
+          "opacity": 1,
+          "visible": true,
+          "renderOrder": 1,
+          "text": "Three decisions",
+          "style": { "fontFamily": "Arial, sans-serif", "fontSize": 0.06, "fontWeight": 700, "fontStyle": "normal", "color": "#FFF9F4", "align": "left", "verticalAlign": "middle", "lineHeight": 1.1 }
+        },
+        {
+          "id": "points-body",
+          "type": "text",
+          "name": "Key points",
+          "frame": { "x": 0.1, "y": 0.34, "width": 0.64, "height": 0.42 },
+          "transform": { "z": 0.12, "rotationX": 0, "rotationY": -3, "rotationZ": 0, "scaleX": 1, "scaleY": 1 },
+          "opacity": 1,
+          "visible": true,
+          "renderOrder": 2,
+          "thickness": 0.04,
+          "text": "01  Lead with the conclusion\n02  Support it with evidence\n03  End with one next action",
+          "style": { "fontFamily": "Arial, sans-serif", "fontSize": 0.04, "fontWeight": 400, "fontStyle": "normal", "color": "#F3EFE8", "align": "left", "verticalAlign": "top", "lineHeight": 1.65 }
+        }
+      ]
+    }
+  ]
+}

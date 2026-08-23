@@ -3,9 +3,13 @@ import { describe, expect, test } from 'vitest';
 import {
   DEFAULT_TEXT_STYLE,
   DEFAULT_TRANSFORM,
+  DEFAULT_PRISMDECK_CDN_URL,
   PRISMDECK_SCHEMA_VERSION,
+  importPresentation,
   loadPrismDeck,
+  loadPrismDeckHtml,
   savePrismDeck,
+  savePrismDeckHtml,
   type LoadedDeck,
 } from '../src/index';
 
@@ -67,5 +71,37 @@ describe('.prismdeck archive', () => {
     files[manifest.assets[0]!.path] = strToU8('tampered');
 
     await expect(loadPrismDeck(zipSync(files))).rejects.toThrow(/Asset (size|digest) mismatch/);
+  });
+});
+
+describe('PrismDeck HTML package', () => {
+  test('round-trips the document and binary assets through one HTML file', async () => {
+    const source = fixture();
+    const saved = await savePrismDeckHtml(source);
+    const html = await saved.text();
+    const loaded = await loadPrismDeckHtml(new TextEncoder().encode(html));
+
+    expect(saved.type).toBe('text/html;charset=utf-8');
+    expect(html).toContain(DEFAULT_PRISMDECK_CDN_URL);
+    expect(html).toContain('type="application/vnd.prismdeck+zip;base64"');
+    expect(loaded.document).toEqual(source.document);
+    expect(loaded.assets.get('pixel')).toEqual(source.assets.get('pixel'));
+  });
+
+  test('imports exported HTML through the presentation boundary', async () => {
+    const saved = await savePrismDeckHtml(fixture());
+    const imported = await importPresentation(await saved.arrayBuffer(), { sourceName: 'archive.html' });
+
+    expect(imported.document.metadata.title).toBe('Archive test');
+    expect(imported.report).toEqual({ format: 'prismdeck', sourceName: 'archive.html', warnings: [] });
+  });
+
+  test('rejects arbitrary HTML and insecure runtime URLs', async () => {
+    await expect(loadPrismDeckHtml(strToU8('<script>globalThis.compromised = true</script>'))).rejects.toThrow(
+      'Missing PrismDeck HTML data',
+    );
+    await expect(savePrismDeckHtml(fixture(), { runtimeUrl: 'http://example.com/prism-deck.min.js' })).rejects.toThrow(
+      'must use HTTPS',
+    );
   });
 });

@@ -16,6 +16,7 @@ only.
 | --- | --- |
 | Import adapters | Parse PPTX, PowerPoint layouts, ODP, or `.prismdeck` into one normalized model and an import report. |
 | Document package | Own the versioned JSON contract, validation, ZIP limits, and binary asset lifecycle. |
+| HTML package | Embeds one validated document archive and loads the version-matched browser runtime from a CDN. |
 | Presentation session | Own slide order, navigation, timing, and the single authoritative state. |
 | Three renderer | Own view-local meshes, textures, cameras, picking, resize, context loss, and disposal. |
 | Stereo output | Project the same scene through calibrated left and right off-axis cameras. |
@@ -32,6 +33,10 @@ source bytes
   -> active slide scene
   -> mono camera OR left/right SBS cameras
 ```
+
+HTML import is a wrapper around the same archive boundary: only the exact inert
+PrismDeck data marker is decoded. Scripts and markup from imported HTML are never
+executed.
 
 Physics advances once per accepted frame before either eye is rendered. Stereo
 never duplicates document state or simulation.

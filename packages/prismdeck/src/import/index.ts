@@ -1,18 +1,20 @@
 import { strFromU8 } from 'fflate';
 import { loadPrismDeck, unzipWithLimits } from '../document/archive';
+import { loadPrismDeckHtml } from '../document/html';
 import type { ImportResult, SourceFormat } from '../document/types';
 import { importOdp } from './odp';
 import { importPptx } from './pptx';
 
 export interface ImportPresentationOptions {
   sourceName?: string;
-  format?: Extract<SourceFormat, 'pptx' | 'odp' | 'prismdeck'>;
+  format?: Extract<SourceFormat, 'pptx' | 'odp' | 'prismdeck'> | 'html';
 }
 
 function formatFromName(sourceName: string | undefined): ImportPresentationOptions['format'] | undefined {
   const extension = sourceName?.split('.').at(-1)?.toLowerCase();
   if (extension === 'pptx' || extension === 'odp') return extension;
   if (extension === 'prismdeck') return 'prismdeck';
+  if (extension === 'html' || extension === 'htm') return 'html';
   return undefined;
 }
 
@@ -32,7 +34,7 @@ export async function importPresentation(
   const format = options.format ?? formatFromName(options.sourceName) ?? detectArchiveFormat(input);
   if (format === 'pptx') return importPptx(input, options.sourceName);
   if (format === 'odp') return importOdp(input, options.sourceName);
-  const loaded = await loadPrismDeck(input);
+  const loaded = format === 'html' ? await loadPrismDeckHtml(input) : await loadPrismDeck(input);
   return {
     ...loaded,
     report: { format: 'prismdeck', sourceName: options.sourceName, warnings: [] },
