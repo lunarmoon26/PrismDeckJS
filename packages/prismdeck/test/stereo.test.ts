@@ -1,8 +1,22 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
-import { configureStereoCameraRig, OUTPUT_PRESETS } from '../src/index';
+import {
+  configureStereoCameraRig,
+  OUTPUT_PRESETS,
+  pinholeScale,
+  projectPinholePoint,
+  scaledStereoEyeSeparationRatio,
+} from '../src/index';
 
 describe('stereo camera rig', () => {
+  test('uses pinhole scale and bounded depth calibration', () => {
+    expect(pinholeScale(36, 4)).toBeCloseTo(0.9);
+    expect(projectPinholePoint({ x: 10, y: 6 }, { x: 2, y: 2 }, 36, 4)).toEqual({ x: 9.2, y: 5.6, scale: 0.9 });
+    expect(scaledStereoEyeSeparationRatio(0.04, 0)).toBe(0);
+    expect(scaledStereoEyeSeparationRatio(0.04, 1)).toBe(0.04);
+    expect(scaledStereoEyeSeparationRatio(0.04, 1.5)).toBe(0.06);
+  });
+
   test('keeps the convergence plane centered for both parallel cameras', () => {
     const left = new PerspectiveCamera();
     const right = new PerspectiveCamera();

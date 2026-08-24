@@ -10,32 +10,52 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
+  Plane,
   PerspectiveCamera,
+  PlaneGeometry,
   Raycaster,
   Scene,
   SRGBColorSpace,
   Texture,
   TextureLoader,
   Vector2,
+  Vector3,
   WebGLRenderer,
   type Material,
 } from 'three';
-import type {
-  ChartElement,
-  DeckElement,
-  DeckSize,
-  ShapeElement,
-  TableElement,
-  TextStyle,
+import {
+  DEFAULT_TEXT_STYLE,
+  type BorderStyle,
+  type ChartElement,
+  type DeckElement,
+  type DeckSize,
+  type ElementFrame,
+  type ImageElement,
+  type ShapeElement,
+  type SlideTransition,
+  type TableCellStyle,
+  type TableElement,
+  type TextStyle,
 } from '../document/types';
 import { PresentationSession, type SessionChangeDetail } from '../runtime/session';
-import { configureStereoCameraRig, OUTPUT_PRESETS, type OutputMode } from './stereo';
+import { renderChartSvg } from './chart';
+import {
+  configureStereoCameraRig,
+  DEFAULT_STEREO_EYE_SEPARATION_RATIO,
+  OUTPUT_PRESETS,
+  scaledStereoEyeSeparationRatio,
+  type OutputMode,
+} from './stereo';
 
 export interface DeckRendererOptions {
   outputMode?: OutputMode;
   antialias?: boolean;
   fovDegrees?: number;
+  /** Absolute scene-unit separation. Prefer eyeSeparationRatio for convergence-relative calibration. */
   eyeSeparation?: number;
+  eyeSeparationRatio?: number;
+  stereoDepthScale?: number;
+  overlayCanvas?: HTMLCanvasElement;
   clearColor?: string;
   pixelRatio?: number;
 }
@@ -43,6 +63,27 @@ export interface DeckRendererOptions {
 export interface PhysicsTransform {
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number; w: number };
+}
+
+export interface ClientPoint {
+  x: number;
+  y: number;
+}
+
+export interface ElementClientQuad {
+  topLeft: ClientPoint;
+  topRight: ClientPoint;
+  bottomRight: ClientPoint;
+  bottomLeft: ClientPoint;
+}
+
+interface CanvasOverlayEntry {
+  object: Object3D;
+  source: HTMLCanvasElement;
+  width: number;
+  height: number;
+  opacity: number;
+  renderOrder: number;
 }
 
 const SLIDE_HEIGHT = 10;
@@ -54,10 +95,11 @@ function degrees(value: number): number {
 
 function elementWorldSize(element: DeckElement, size: DeckSize): { width: number; height: number; depth: number } {
   const slideWidth = SLIDE_HEIGHT * (size.width / size.height);
+  const thickness = element.thickness ?? 0;
   return {
     width: Math.max(0.01, element.frame.width * slideWidth),
     height: Math.max(0.01, element.frame.height * SLIDE_HEIGHT),
-    depth: Math.max(MIN_THICKNESS, element.thickness ?? MIN_THICKNESS),
+    depth: thickness <= 0 ? 0 : Math.max(MIN_THICKNESS, thickness),
   };
 }
 
@@ -78,10 +120,19 @@ export function elementWorldTransform(element: DeckElement, size: DeckSize): Phy
   };
 }
 
-function textureCanvas(element: DeckElement): HTMLCanvasElement {
-  const aspect = Math.max(0.2, Math.min(5, element.frame.width / Math.max(0.001, element.frame.height)));
-  const width = Math.round(Math.min(1400, Math.max(384, 720 * aspect)));
-  const height = Math.round(Math.min(1024, Math.max(192, width / aspect)));
+export function elementTextureSize(element: DeckElement, deckSize: DeckSize): { width: number; height: number } {
+  const deckAspect = deckSize.width / Math.max(1, deckSize.height);
+  let width = Math.max(1, element.frame.width * deckAspect * 2048);
+  let height = Math.max(1, element.frame.height * 2048);
+  const longest = Math.max(width, height);
+  const scale = longest > 2048 ? 2048 / longest : longest < 384 ? 384 / longest : 1;
+  width *= scale;
+  height *= scale;
+  return { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) };
+}
+
+function textureCanvas(element: DeckElement, deckSize: DeckSize): HTMLCanvasElement {
+  const { width, height } = elementTextureSize(element, deckSize);
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -170,86 +221,164 @@ function drawShape(context: CanvasRenderingContext2D, element: ShapeElement): vo
   if (element.text && element.textStyle) drawText(context, element, element.text, element.textStyle);
 }
 
+function mergeTableCellStyle(base: TableCellStyle, override: TableCellStyle | undefined): TableCellStyle {
+  return {
+    fill: override?.fill ?? base.fill,
+    textStyle: { ...DEFAULT_TEXT_STYLE, ...base.textStyle, ...override?.textStyle },
+    verticalAlign: override?.verticalAlign ?? override?.textStyle?.verticalAlign ?? base.verticalAlign ?? base.textStyle?.verticalAlign,
+    padding: { top: 6, right: 8, bottom: 6, left: 8, ...base.padding, ...override?.padding },
+    borders: { ...base.borders, ...override?.borders },
+  };
+}
+
+function cumulativeWeights(weights: number[], size: number): number[] {
+  const total = weights.reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
+  const offsets = [0];
+  let current = 0;
+  for (const weight of weights) {
+    current += (Math.max(0, weight) / total) * size;
+    offsets.push(current);
+  }
+  return offsets;
+}
+
+function scaledBorderWidth(context: CanvasRenderingContext2D, border: BorderStyle): number {
+  return Math.max(0.5, border.width * Math.max(0.5, context.canvas.width / 960));
+}
+
+function strokeTableBorder(
+  context: CanvasRenderingContext2D,
+  border: BorderStyle | undefined,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): void {
+  if (!border || border.width <= 0) return;
+  context.strokeStyle = border.color;
+  context.lineWidth = scaledBorderWidth(context, border);
+  context.setLineDash(border.style === 'dotted' ? [context.lineWidth, context.lineWidth * 1.5] : border.style === 'dashed' ? [context.lineWidth * 4, context.lineWidth * 2] : []);
+  context.beginPath();
+  context.moveTo(x1, y1);
+  context.lineTo(x2, y2);
+  context.stroke();
+  context.setLineDash([]);
+}
+
+function drawTableCellText(
+  context: CanvasRenderingContext2D,
+  element: TableElement,
+  text: string,
+  style: TableCellStyle,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  const textStyle = style.textStyle ?? DEFAULT_TEXT_STYLE;
+  const scale = Math.max(0.5, context.canvas.width / 960);
+  const padding = style.padding ?? { top: 6, right: 8, bottom: 6, left: 8 };
+  const left = padding.left * scale;
+  const right = padding.right * scale;
+  const top = padding.top * scale;
+  const bottom = padding.bottom * scale;
+  const availableWidth = Math.max(1, width - left - right);
+  const availableHeight = Math.max(1, height - top - bottom);
+  const fontSize = applyFont(context, textStyle, element);
+  const lines = wrapLines(context, text, availableWidth);
+  const lineHeight = fontSize * textStyle.lineHeight;
+  const blockHeight = lines.length * lineHeight;
+  const verticalAlign = style.verticalAlign ?? textStyle.verticalAlign;
+  const startY = verticalAlign === 'middle'
+    ? y + top + Math.max(0, (availableHeight - blockHeight) / 2)
+    : verticalAlign === 'bottom'
+      ? y + height - bottom - blockHeight
+      : y + top;
+  const textX = textStyle.align === 'center' ? x + width / 2 : textStyle.align === 'right' ? x + width - right : x + left;
+  context.save();
+  context.beginPath();
+  context.rect(x, y, width, height);
+  context.clip();
+  context.fillStyle = textStyle.color;
+  context.textAlign = textStyle.align;
+  context.textBaseline = 'top';
+  lines.forEach((line, index) => context.fillText(line, textX, startY + index * lineHeight, availableWidth));
+  context.restore();
+}
+
 function drawTable(context: CanvasRenderingContext2D, element: TableElement): void {
-  context.fillStyle = element.fill;
+  context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+  const defaultStyle = mergeTableCellStyle(element.style, undefined);
+  context.fillStyle = defaultStyle.fill ?? '#FFFFFF';
   context.fillRect(0, 0, context.canvas.width, context.canvas.height);
-  const rowCount = Math.max(1, element.rows.length);
-  const columnCount = Math.max(1, ...element.rows.map((row) => row.length));
-  const cellWidth = context.canvas.width / columnCount;
-  const cellHeight = context.canvas.height / rowCount;
-  context.strokeStyle = element.stroke;
-  context.lineWidth = 2;
-  const fontSize = applyFont(context, element.textStyle, element);
+  if (element.rows.length === 0) return;
+  const columns = cumulativeWeights(element.columns, context.canvas.width);
+  const rows = cumulativeWeights(element.rows.map((row) => row.height), context.canvas.height);
   element.rows.forEach((row, rowIndex) => {
-    row.forEach((value, columnIndex) => {
-      const x = columnIndex * cellWidth;
-      const y = rowIndex * cellHeight;
-      if (rowIndex < element.headerRows) {
-        context.fillStyle = '#E7E5E4';
-        context.fillRect(x, y, cellWidth, cellHeight);
-      }
-      context.strokeRect(x, y, cellWidth, cellHeight);
-      context.fillStyle = element.textStyle.color;
-      context.textAlign = 'left';
-      context.fillText(value, x + 8, y + Math.max(4, (cellHeight - fontSize) / 2), cellWidth - 16);
-    });
+    for (const cell of row.cells) {
+      const columnSpan = Math.max(1, cell.columnSpan ?? 1);
+      const rowSpan = Math.max(1, cell.rowSpan ?? 1);
+      const x = columns[cell.column] ?? 0;
+      const right = columns[Math.min(element.columns.length, cell.column + columnSpan)] ?? context.canvas.width;
+      const y = rows[rowIndex] ?? 0;
+      const bottom = rows[Math.min(element.rows.length, rowIndex + rowSpan)] ?? context.canvas.height;
+      const width = Math.max(0, right - x);
+      const height = Math.max(0, bottom - y);
+      const style = mergeTableCellStyle(defaultStyle, cell.style);
+      context.fillStyle = cell.header && !cell.style?.fill ? '#E7E5E4' : style.fill ?? '#FFFFFF';
+      context.fillRect(x, y, width, height);
+      drawTableCellText(context, element, cell.text, style, x, y, width, height);
+      strokeTableBorder(context, style.borders?.top, x, y, right, y);
+      strokeTableBorder(context, style.borders?.right, right, y, right, bottom);
+      strokeTableBorder(context, style.borders?.bottom, x, bottom, right, bottom);
+      strokeTableBorder(context, style.borders?.left, x, y, x, bottom);
+    }
   });
 }
 
 function drawChart(context: CanvasRenderingContext2D, element: ChartElement): void {
-  context.fillStyle = '#FFFFFF';
+  context.fillStyle = element.background ?? '#FFFFFF';
   context.fillRect(0, 0, context.canvas.width, context.canvas.height);
-  const padding = Math.round(Math.min(context.canvas.width, context.canvas.height) * 0.1);
-  const values = element.series.flatMap((series) => series.values).filter((value): value is number => value !== null);
-  const maximum = Math.max(1, ...values.map(Math.abs));
-  const categoryCount = Math.max(1, element.categories.length, ...element.series.map((series) => series.values.length));
-  const colors = ['#2563EB', '#F97316', '#16A34A', '#9333EA', '#DC2626'];
-  context.strokeStyle = '#A8A29E';
-  context.beginPath();
-  context.moveTo(padding, padding);
-  context.lineTo(padding, context.canvas.height - padding);
-  context.lineTo(context.canvas.width - padding, context.canvas.height - padding);
-  context.stroke();
-  const plotWidth = context.canvas.width - padding * 2;
-  const plotHeight = context.canvas.height - padding * 2;
-  if (element.chartType === 'pie') {
-    const pieValues = element.series[0]?.values.map((value) => Math.max(0, value ?? 0)) ?? [];
-    const total = pieValues.reduce((sum, value) => sum + value, 0) || 1;
-    let angle = -Math.PI / 2;
-    pieValues.forEach((value, index) => {
-      const next = angle + (value / total) * Math.PI * 2;
-      context.fillStyle = colors[index % colors.length] ?? '#2563EB';
-      context.beginPath();
-      context.moveTo(context.canvas.width / 2, context.canvas.height / 2);
-      context.arc(context.canvas.width / 2, context.canvas.height / 2, Math.min(plotWidth, plotHeight) * 0.4, angle, next);
-      context.fill();
-      angle = next;
-    });
-    return;
-  }
-  const groupWidth = plotWidth / categoryCount;
-  const barWidth = groupWidth / Math.max(1, element.series.length + 1);
-  element.series.forEach((series, seriesIndex) => {
-    context.fillStyle = series.color ?? colors[seriesIndex % colors.length] ?? '#2563EB';
-    context.strokeStyle = context.fillStyle;
-    context.beginPath();
-    series.values.forEach((value, categoryIndex) => {
-      const normalized = (value ?? 0) / maximum;
-      const x = padding + categoryIndex * groupWidth + (seriesIndex + 0.5) * barWidth;
-      const y = context.canvas.height - padding - normalized * plotHeight;
-      if (element.chartType === 'line' || element.chartType === 'area') {
-        if (categoryIndex === 0) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      } else {
-        context.fillRect(x, y, barWidth * 0.8, normalized * plotHeight);
-      }
-    });
-    if (element.chartType === 'line' || element.chartType === 'area') context.stroke();
+  drawText(context, element, element.title || element.name || 'Chart', {
+    ...DEFAULT_TEXT_STYLE,
+    color: '#57534E',
+    align: 'center',
+    verticalAlign: 'middle',
   });
 }
 
-function canvasTextureFor(element: DeckElement): CanvasTexture {
-  const canvas = textureCanvas(element);
+function imageCanvas(element: ImageElement, deckSize: DeckSize, image: HTMLImageElement): HTMLCanvasElement {
+  const canvas = textureCanvas(element, deckSize);
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D rendering is unavailable');
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  if (sourceWidth <= 0 || sourceHeight <= 0) return canvas;
+  if (element.fit === 'fill') {
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+  const scale = element.fit === 'cover'
+    ? Math.max(canvas.width / sourceWidth, canvas.height / sourceHeight)
+    : Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight);
+  const width = sourceWidth * scale;
+  const height = sourceHeight * scale;
+  context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+  return canvas;
+}
+
+function canRenderSlideWithCanvasOverlay(element: DeckElement): boolean {
+  return (
+    (element.thickness ?? 0) === 0 &&
+    element.transform.z === 0 &&
+    element.transform.rotationX === 0 &&
+    element.transform.rotationY === 0 &&
+    !element.physics
+  );
+}
+
+function canvasTextureFor(element: DeckElement, deckSize: DeckSize): CanvasTexture {
+  const canvas = textureCanvas(element, deckSize);
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D rendering is unavailable');
   if (element.type === 'text') drawText(context, element, element.text, element.style);
@@ -282,13 +411,17 @@ export class DeckRenderer {
   readonly leftCamera = new PerspectiveCamera();
   readonly rightCamera = new PerspectiveCamera();
   readonly renderer: WebGLRenderer;
+  readonly overlayCanvas?: HTMLCanvasElement;
   private readonly slideGroup = new Group();
   private readonly elementObjects = new Map<string, Object3D>();
   private readonly textures = new Set<Texture>();
   private readonly materials = new Set<Material>();
-  private readonly pendingImageLoads = new Set<Promise<void>>();
+  private readonly pendingSurfaceLoads = new Set<Promise<void>>();
   private readonly raycaster = new Raycaster();
   private readonly pointer = new Vector2();
+  private readonly slidePlane = new Plane(new Vector3(0, 0, 1), 0);
+  private readonly overlayEntries: CanvasOverlayEntry[] = [];
+  private readonly overlayContext?: CanvasRenderingContext2D;
   private session?: PresentationSession;
   private outputMode: OutputMode;
   private width = 1;
@@ -296,18 +429,28 @@ export class DeckRenderer {
   private disposed = false;
   private generation = 0;
   private readonly fovDegrees: number;
-  private readonly eyeSeparation: number;
+  private readonly eyeSeparation?: number;
+  private readonly eyeSeparationRatio: number;
+  private stereoDepthScale: number;
   private cameraDistance = 15;
   private activeDeckSize?: DeckSize;
+  private activeTransitions: Animation[] = [];
   private sessionChangeListener = (event: Event) => {
     const detail = (event as CustomEvent<SessionChangeDetail>).detail;
-    if (detail.reason === 'slide' || detail.reason === 'deck' || detail.reason === 'content') this.rebuild();
+    if (detail.reason === 'slide' || detail.reason === 'deck' || detail.reason === 'content') {
+      this.rebuild();
+      if (detail.reason === 'slide') this.playSlideTransition(this.session?.currentSlide?.transition);
+    }
   };
 
   constructor(readonly canvas: HTMLCanvasElement, options: DeckRendererOptions = {}) {
     this.outputMode = options.outputMode ?? 'mono';
     this.fovDegrees = options.fovDegrees ?? 40;
-    this.eyeSeparation = options.eyeSeparation ?? 0.18;
+    this.eyeSeparation = options.eyeSeparation;
+    this.eyeSeparationRatio = options.eyeSeparationRatio ?? DEFAULT_STEREO_EYE_SEPARATION_RATIO;
+    this.stereoDepthScale = options.stereoDepthScale ?? 1;
+    this.overlayCanvas = options.overlayCanvas;
+    this.overlayContext = options.overlayCanvas?.getContext('2d') ?? undefined;
     this.renderer = new WebGLRenderer({ canvas, antialias: options.antialias ?? true, alpha: false });
     this.renderer.setPixelRatio(options.pixelRatio ?? Math.min(globalThis.devicePixelRatio || 1, 2));
     this.renderer.setClearColor(new Color(options.clearColor ?? '#0C0A09'), 1);
@@ -329,6 +472,7 @@ export class DeckRenderer {
   }
 
   detach(): void {
+    this.cancelSlideTransition();
     this.session?.removeEventListener('change', this.sessionChangeListener);
     this.session = undefined;
     this.clearSlide();
@@ -345,10 +489,23 @@ export class DeckRenderer {
     return this.outputMode;
   }
 
+  setStereoDepthScale(scale: number): void {
+    this.stereoDepthScale = Math.max(0, Math.min(1.5, Number.isFinite(scale) ? scale : 1));
+    this.configureCameras();
+  }
+
   resize(width: number, height: number, updateStyle = false): void {
     this.width = Math.max(1, Math.round(width));
     this.height = Math.max(1, Math.round(height));
     this.renderer.setSize(this.width, this.height, updateStyle);
+    if (this.overlayCanvas) {
+      this.overlayCanvas.width = this.canvas.width;
+      this.overlayCanvas.height = this.canvas.height;
+      if (updateStyle) {
+        this.overlayCanvas.style.width = `${this.width}px`;
+        this.overlayCanvas.style.height = `${this.height}px`;
+      }
+    }
     if (this.activeDeckSize) this.fitCamera(this.activeDeckSize);
     else this.configureCameras();
   }
@@ -367,17 +524,18 @@ export class DeckRenderer {
     this.renderer.clear(true, true, true);
     if (this.outputMode === 'mono') {
       this.renderer.render(this.scene, this.camera);
-      return;
+    } else {
+      const eyeWidth = Math.floor(this.width / 2);
+      this.renderer.setScissorTest(true);
+      this.renderer.setViewport(0, 0, eyeWidth, this.height);
+      this.renderer.setScissor(0, 0, eyeWidth, this.height);
+      this.renderer.render(this.scene, this.leftCamera);
+      this.renderer.setViewport(eyeWidth, 0, this.width - eyeWidth, this.height);
+      this.renderer.setScissor(eyeWidth, 0, this.width - eyeWidth, this.height);
+      this.renderer.render(this.scene, this.rightCamera);
+      this.renderer.setScissorTest(false);
     }
-    const eyeWidth = Math.floor(this.width / 2);
-    this.renderer.setScissorTest(true);
-    this.renderer.setViewport(0, 0, eyeWidth, this.height);
-    this.renderer.setScissor(0, 0, eyeWidth, this.height);
-    this.renderer.render(this.scene, this.leftCamera);
-    this.renderer.setViewport(eyeWidth, 0, this.width - eyeWidth, this.height);
-    this.renderer.setScissor(eyeWidth, 0, this.width - eyeWidth, this.height);
-    this.renderer.render(this.scene, this.rightCamera);
-    this.renderer.setScissorTest(false);
+    this.renderCanvasOverlay();
   }
 
   pick(clientX: number, clientY: number): string | undefined {
@@ -393,14 +551,109 @@ export class DeckRenderer {
     }
     this.pointer.set(eyeX * 2 - 1, -(normalizedY * 2 - 1));
     this.raycaster.setFromCamera(this.pointer, camera);
-    const hit = this.raycaster.intersectObjects(Array.from(this.elementObjects.values()), true)[0];
-    let object: Object3D | null = hit?.object ?? null;
-    while (object && typeof object.userData.elementId !== 'string') object = object.parent;
-    return object?.userData.elementId as string | undefined;
+    let selected: { object: Object3D; distance: number } | undefined;
+    for (const hit of this.raycaster.intersectObjects(Array.from(this.elementObjects.values()), true)) {
+      let object: Object3D | null = hit.object;
+      while (object && typeof object.userData.elementId !== 'string') object = object.parent;
+      if (!object) continue;
+      if (
+        !selected ||
+        hit.distance < selected.distance - 0.00001 ||
+        (Math.abs(hit.distance - selected.distance) <= 0.00001 && object.renderOrder > selected.object.renderOrder)
+      ) {
+        selected = { object, distance: hit.distance };
+      }
+    }
+    return selected?.object.userData.elementId as string | undefined;
+  }
+
+  clientPointToSlide(clientX: number, clientY: number, clampToBounds = false): { x: number; y: number } | undefined {
+    const size = this.activeDeckSize;
+    if (!size) return undefined;
+    const bounds = this.canvas.getBoundingClientRect();
+    const normalizedX = (clientX - bounds.left) / bounds.width;
+    const normalizedY = (clientY - bounds.top) / bounds.height;
+    let camera = this.camera;
+    let eyeX = normalizedX;
+    if (this.outputMode !== 'mono') {
+      const rightEye = normalizedX >= 0.5;
+      camera = rightEye ? this.rightCamera : this.leftCamera;
+      eyeX = rightEye ? (normalizedX - 0.5) * 2 : normalizedX * 2;
+    }
+    this.pointer.set(eyeX * 2 - 1, -(normalizedY * 2 - 1));
+    this.raycaster.setFromCamera(this.pointer, camera);
+    const point = this.raycaster.ray.intersectPlane(this.slidePlane, new Vector3());
+    if (!point) return undefined;
+    const slideWidth = SLIDE_HEIGHT * (size.width / size.height);
+    const x = point.x / slideWidth + 0.5;
+    const y = 0.5 - point.y / SLIDE_HEIGHT;
+    if (!clampToBounds && (x < 0 || x > 1 || y < 0 || y > 1)) return undefined;
+    return {
+      x: Math.max(0, Math.min(1, x)),
+      y: Math.max(0, Math.min(1, y)),
+    };
+  }
+
+  getElementClientQuads(elementId: string): ElementClientQuad[] {
+    const object = this.elementObjects.get(elementId);
+    const size = this.activeDeckSize;
+    const element = object?.userData.element as DeckElement | undefined;
+    if (!object || !size || !element) return [];
+    const bounds = this.canvas.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return [];
+    const worldSize = elementWorldSize(element, size);
+    this.slideGroup.updateMatrixWorld(true);
+    const project = (camera: PerspectiveCamera, viewportX: number, viewportWidth: number): ElementClientQuad => {
+      const point = (x: number, y: number): ClientPoint => {
+        const projected = new Vector3(x, y, 0).applyMatrix4(object.matrixWorld).project(camera);
+        return {
+          x: viewportX + (projected.x + 1) * viewportWidth / 2,
+          y: (1 - projected.y) * bounds.height / 2,
+        };
+      };
+      return {
+        topLeft: point(-worldSize.width / 2, worldSize.height / 2),
+        topRight: point(worldSize.width / 2, worldSize.height / 2),
+        bottomRight: point(worldSize.width / 2, -worldSize.height / 2),
+        bottomLeft: point(-worldSize.width / 2, -worldSize.height / 2),
+      };
+    };
+    if (this.outputMode === 'mono') return [project(this.camera, 0, bounds.width)];
+    const eyeWidth = bounds.width / 2;
+    return [project(this.leftCamera, 0, eyeWidth), project(this.rightCamera, eyeWidth, eyeWidth)];
+  }
+
+  snapshotCanvas(): HTMLCanvasElement {
+    const snapshot = document.createElement('canvas');
+    snapshot.width = this.canvas.width;
+    snapshot.height = this.canvas.height;
+    const context = snapshot.getContext('2d');
+    if (!context) throw new Error('Canvas 2D rendering is unavailable');
+    context.drawImage(this.canvas, 0, 0);
+    if (this.overlayCanvas) context.drawImage(this.overlayCanvas, 0, 0);
+    return snapshot;
   }
 
   getElementObject(elementId: string): Object3D | undefined {
     return this.elementObjects.get(elementId);
+  }
+
+  previewElementFrame(elementId: string, frame: ElementFrame): boolean {
+    const object = this.elementObjects.get(elementId);
+    const size = this.activeDeckSize;
+    const element = object?.userData.element as DeckElement | undefined;
+    if (!object || !size || !element) return false;
+    const current = elementWorldTransform(element, size);
+    const next = elementWorldTransform({ ...element, frame }, size);
+    object.position.set(next.position.x, next.position.y, next.position.z);
+    object.quaternion.set(next.rotation.x, next.rotation.y, next.rotation.z, next.rotation.w);
+    object.scale.set(
+      element.transform.scaleX * (next.size.width / current.size.width),
+      element.transform.scaleY * (next.size.height / current.size.height),
+      1,
+    );
+    object.updateMatrixWorld(true);
+    return true;
   }
 
   applyPhysicsTransforms(transforms: ReadonlyMap<string, PhysicsTransform>): void {
@@ -413,37 +666,50 @@ export class DeckRenderer {
   }
 
   async whenReady(): Promise<void> {
-    while (this.pendingImageLoads.size > 0) {
-      await Promise.allSettled(Array.from(this.pendingImageLoads));
+    while (this.pendingSurfaceLoads.size > 0) {
+      await Promise.allSettled(Array.from(this.pendingSurfaceLoads));
     }
   }
 
   rebuild(): void {
     if (this.disposed) return;
+    this.cancelSlideTransition();
     this.clearSlide();
     const slide = this.session?.currentSlide;
     const document = this.session?.document;
     if (!slide || !document) return;
     this.activeDeckSize = document.size;
+    this.renderer.setClearColor(new Color(slide.background.slice(0, 7)), 1);
     const generation = this.generation;
-    const slideWidth = SLIDE_HEIGHT * (document.size.width / document.size.height);
-    const backgroundGeometry = new BoxGeometry(slideWidth, SLIDE_HEIGHT, 0.04);
-    const backgroundMaterial = new MeshStandardMaterial({ color: new Color(slide.background), roughness: 0.9 });
-    this.materials.add(backgroundMaterial);
-    const background = new Mesh(backgroundGeometry, backgroundMaterial);
-    background.position.z = -0.08;
-    background.receiveShadow = true;
-    this.slideGroup.add(background);
+    const useCanvasOverlay = Boolean(
+      this.overlayContext && slide.elements.filter((element) => element.visible).every(canRenderSlideWithCanvasOverlay),
+    );
 
     for (const element of slide.elements) {
       if (!element.visible) continue;
-      const object = this.createElementObject(element, document.size);
+      const object = this.createElementObject(element, document.size, useCanvasOverlay);
       this.elementObjects.set(element.id, object);
       this.slideGroup.add(object);
+      const source = object.userData.overlaySource;
+      if (source instanceof HTMLCanvasElement) {
+        const world = elementWorldTransform(element, document.size);
+        this.overlayEntries.push({
+          object,
+          source,
+          width: world.size.width,
+          height: world.size.height,
+          opacity: element.opacity,
+          renderOrder: element.renderOrder,
+        });
+      }
       if (element.type === 'image') {
         const pending = this.loadImage(element.id, element.assetId, generation);
-        this.pendingImageLoads.add(pending);
-        void pending.finally(() => this.pendingImageLoads.delete(pending));
+        this.pendingSurfaceLoads.add(pending);
+        void pending.finally(() => this.pendingSurfaceLoads.delete(pending));
+      } else if (element.type === 'chart') {
+        const pending = this.loadChart(element.id, element, generation);
+        this.pendingSurfaceLoads.add(pending);
+        void pending.finally(() => this.pendingSurfaceLoads.delete(pending));
       }
     }
     this.fitCamera(document.size);
@@ -453,20 +719,41 @@ export class DeckRenderer {
     if (this.disposed) return;
     this.disposed = true;
     this.detach();
+    this.clearSlide();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
   }
 
-  private createElementObject(element: DeckElement, deckSize: DeckSize): Object3D {
+  private createElementObject(element: DeckElement, deckSize: DeckSize, useCanvasOverlay: boolean): Object3D {
     const world = elementWorldTransform(element, deckSize);
-    const geometry = new BoxGeometry(world.size.width, world.size.height, world.size.depth);
+    const planar = world.size.depth === 0;
+    const geometry = planar
+      ? new PlaneGeometry(world.size.width, world.size.height)
+      : new BoxGeometry(world.size.width, world.size.height, world.size.depth);
     let material: MeshStandardMaterial | MeshBasicMaterial;
     if (element.type === 'image') {
-      const placeholder = canvasTextureFor({ ...element, type: 'unsupported', reason: 'Loading image', fallbackText: element.alt ?? element.name });
+      const placeholder = canvasTextureFor({ ...element, type: 'unsupported', reason: 'Loading image', fallbackText: element.alt ?? element.name }, deckSize);
       this.textures.add(placeholder);
-      material = new MeshBasicMaterial({ map: placeholder, transparent: true, opacity: element.opacity, side: DoubleSide });
+      material = planar
+        ? new MeshBasicMaterial({ map: placeholder, transparent: true, opacity: element.opacity, side: DoubleSide })
+        : new MeshStandardMaterial({
+            map: placeholder,
+            transparent: true,
+            opacity: element.opacity,
+            roughness: 0.72,
+            metalness: 0.02,
+          });
+    } else if (planar) {
+      const texture = canvasTextureFor(element, deckSize);
+      this.textures.add(texture);
+      material = new MeshBasicMaterial({
+        map: texture,
+        transparent: element.opacity < 1 || element.type === 'text',
+        opacity: element.opacity,
+        side: DoubleSide,
+      });
     } else {
-      const texture = canvasTextureFor(element);
+      const texture = canvasTextureFor(element, deckSize);
       this.textures.add(texture);
       material = new MeshStandardMaterial({
         map: texture,
@@ -484,6 +771,18 @@ export class DeckRenderer {
     mesh.renderOrder = element.renderOrder;
     mesh.userData.elementId = element.id;
     mesh.userData.element = element;
+    const source = material.map?.image;
+    const canvasOverlay = Boolean(
+      useCanvasOverlay &&
+      planar &&
+      source instanceof HTMLCanvasElement,
+    );
+    if (canvasOverlay) {
+      material.colorWrite = false;
+      material.depthWrite = false;
+      mesh.userData.overlaySource = source;
+      mesh.userData.canvasOverlay = true;
+    }
     return mesh;
   }
 
@@ -505,7 +804,19 @@ export class DeckRenderer {
       }
       const oldMaterial = object.material as Material;
       const opacity = oldMaterial.opacity;
-      const material = new MeshBasicMaterial({ map: texture, transparent: opacity < 1, opacity, side: DoubleSide });
+      const canvasOverlay = object.userData.canvasOverlay === true;
+      const material = object.geometry instanceof PlaneGeometry
+        ? new MeshBasicMaterial({ map: texture, transparent: true, opacity, side: DoubleSide })
+        : new MeshStandardMaterial({ map: texture, transparent: true, opacity, roughness: 0.72, metalness: 0.02 });
+      if (canvasOverlay) {
+        material.colorWrite = false;
+        material.depthWrite = false;
+        const element = object.userData.element as DeckElement | undefined;
+        if (element?.type === 'image' && texture.image instanceof HTMLImageElement && this.activeDeckSize) {
+          const entry = this.overlayEntries.find((candidate) => candidate.object === object);
+          if (entry) entry.source = imageCanvas(element, this.activeDeckSize, texture.image);
+        }
+      }
       object.material = material;
       this.textures.add(texture);
       this.materials.add(material);
@@ -518,6 +829,40 @@ export class DeckRenderer {
     }
   }
 
+  private async loadChart(elementId: string, element: ChartElement, generation: number): Promise<void> {
+    const object = this.elementObjects.get(elementId);
+    if (!(object instanceof Mesh)) return;
+    const material = object.material as MeshBasicMaterial | MeshStandardMaterial;
+    const texture = material.map;
+    const canvas = texture?.image;
+    if (!(texture instanceof CanvasTexture) || !(canvas instanceof HTMLCanvasElement)) return;
+
+    let url: string | undefined;
+    try {
+      const svg = renderChartSvg(element, canvas.width, canvas.height);
+      url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+      const image = new Image();
+      image.decoding = 'async';
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error(`Unable to render chart ${element.id}`));
+        image.src = url!;
+      });
+      if (this.disposed || generation !== this.generation) return;
+      const currentObject = this.elementObjects.get(elementId);
+      if (currentObject !== object || object.material !== material) return;
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      texture.needsUpdate = true;
+    } catch {
+      // The synchronous placeholder remains visible when the browser cannot decode SVG.
+    } finally {
+      if (url) URL.revokeObjectURL(url);
+    }
+  }
+
   private fitCamera(size: DeckSize): void {
     const slideWidth = SLIDE_HEIGHT * (size.width / size.height);
     const logicalAspect =
@@ -525,8 +870,93 @@ export class DeckRenderer {
     const verticalFov = degrees(this.fovDegrees);
     const distanceForHeight = SLIDE_HEIGHT / 2 / Math.tan(verticalFov / 2);
     const distanceForWidth = slideWidth / 2 / (Math.tan(verticalFov / 2) * logicalAspect);
-    this.cameraDistance = Math.max(distanceForHeight, distanceForWidth) * 1.08 + 1;
+    this.cameraDistance = Math.max(distanceForHeight, distanceForWidth) * 1.02 + 1;
     this.configureCameras();
+  }
+
+  private playSlideTransition(transition: SlideTransition | undefined): void {
+    this.cancelSlideTransition();
+    if (!transition || transition.type === 'cut' || transition.durationMs === 0) return;
+    if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches || !this.canvas.animate) return;
+    const keyframes: Keyframe[] = transition.type === 'fade'
+      ? [{ opacity: 0 }, { opacity: 1 }]
+      : [
+          { opacity: 0.35, transform: 'translate3d(6%, 0, 0)' },
+          { opacity: 1, transform: 'translate3d(0, 0, 0)' },
+        ];
+    const targets = this.overlayCanvas ? [this.canvas, this.overlayCanvas] : [this.canvas];
+    this.activeTransitions = targets.map((target) => target.animate(keyframes, {
+      duration: transition.durationMs,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    }));
+    for (const animation of this.activeTransitions) {
+      const clear = () => {
+        this.activeTransitions = this.activeTransitions.filter((candidate) => candidate !== animation);
+      };
+      animation.addEventListener('finish', clear, { once: true });
+      animation.addEventListener('cancel', clear, { once: true });
+    }
+  }
+
+  private cancelSlideTransition(): void {
+    for (const animation of this.activeTransitions) animation.cancel();
+    this.activeTransitions = [];
+  }
+
+  private renderCanvasOverlay(): void {
+    const context = this.overlayContext;
+    const overlay = this.overlayCanvas;
+    if (!context || !overlay) return;
+    const scaleX = overlay.width / this.width;
+    const scaleY = overlay.height / this.height;
+    context.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+    context.clearRect(0, 0, this.width, this.height);
+    this.slideGroup.updateMatrixWorld(true);
+    const entries = [...this.overlayEntries].sort((first, second) => first.renderOrder - second.renderOrder);
+    if (this.outputMode === 'mono') {
+      for (const entry of entries) this.drawCanvasOverlayEntry(context, entry, this.camera, 0, this.width, this.height);
+      return;
+    }
+    const eyeWidth = Math.floor(this.width / 2);
+    for (const entry of entries) this.drawCanvasOverlayEntry(context, entry, this.leftCamera, 0, eyeWidth, this.height);
+    for (const entry of entries) {
+      this.drawCanvasOverlayEntry(context, entry, this.rightCamera, eyeWidth, this.width - eyeWidth, this.height);
+    }
+  }
+
+  private drawCanvasOverlayEntry(
+    context: CanvasRenderingContext2D,
+    entry: CanvasOverlayEntry,
+    camera: PerspectiveCamera,
+    viewportX: number,
+    viewportWidth: number,
+    viewportHeight: number,
+  ): void {
+    const project = (x: number, y: number) => {
+      const point = new Vector3(x, y, 0).applyMatrix4(entry.object.matrixWorld).project(camera);
+      return {
+        x: viewportX + (point.x + 1) * viewportWidth / 2,
+        y: (1 - point.y) * viewportHeight / 2,
+      };
+    };
+    const topLeft = project(-entry.width / 2, entry.height / 2);
+    const topRight = project(entry.width / 2, entry.height / 2);
+    const bottomLeft = project(-entry.width / 2, -entry.height / 2);
+    context.save();
+    context.beginPath();
+    context.rect(viewportX, 0, viewportWidth, viewportHeight);
+    context.clip();
+    context.globalAlpha = entry.opacity;
+    context.transform(
+      (topRight.x - topLeft.x) / entry.source.width,
+      (topRight.y - topLeft.y) / entry.source.width,
+      (bottomLeft.x - topLeft.x) / entry.source.height,
+      (bottomLeft.y - topLeft.y) / entry.source.height,
+      topLeft.x,
+      topLeft.y,
+    );
+    context.drawImage(entry.source, 0, 0);
+    context.restore();
   }
 
   private configureCameras(): void {
@@ -545,7 +975,10 @@ export class DeckRenderer {
       far: 200,
       distance: this.cameraDistance,
       convergenceDistance: this.cameraDistance,
-      eyeSeparation: this.eyeSeparation,
+      eyeSeparation: this.eyeSeparation ?? this.cameraDistance * scaledStereoEyeSeparationRatio(
+        this.eyeSeparationRatio,
+        this.stereoDepthScale,
+      ),
       aspect: OUTPUT_PRESETS[this.outputMode].logicalEyeAspect,
     });
   }
@@ -564,5 +997,9 @@ export class DeckRenderer {
     this.textures.clear();
     this.materials.clear();
     this.elementObjects.clear();
+    this.overlayEntries.length = 0;
+    if (this.overlayContext && this.overlayCanvas) {
+      this.overlayContext.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+    }
   }
 }

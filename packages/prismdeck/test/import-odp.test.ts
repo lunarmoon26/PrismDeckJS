@@ -2,7 +2,7 @@
 
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, test } from 'vitest';
-import { importPresentation, validateDeckDocument } from '../src/index';
+import { elementWorldTransform, importPresentation, validateDeckDocument } from '../src/index';
 
 const contentXml = `<?xml version="1.0" encoding="UTF-8"?>
 <office:document-content
@@ -27,6 +27,28 @@ const contentXml = `<?xml version="1.0" encoding="UTF-8"?>
       <style:paragraph-properties fo:text-align="center"/>
       <style:text-properties fo:font-size="24pt" fo:color="#123456" fo:font-weight="bold"/>
     </style:style>
+    <style:style style:name="Table1" style:family="table">
+      <style:table-properties fo:background-color="#f8fafc"/>
+    </style:style>
+    <style:style style:name="TableColumn1" style:family="table-column">
+      <style:table-column-properties style:column-width="2in"/>
+    </style:style>
+    <style:style style:name="TableColumn2" style:family="table-column">
+      <style:table-column-properties style:column-width="3in"/>
+    </style:style>
+    <style:style style:name="TableHeaderRow" style:family="table-row">
+      <style:table-row-properties style:row-height="0.5in"/>
+    </style:style>
+    <style:style style:name="TableBodyRow" style:family="table-row">
+      <style:table-row-properties style:row-height="0.375in"/>
+    </style:style>
+    <style:style style:name="TableHeaderCell" style:family="table-cell">
+      <style:table-cell-properties fo:background-color="#334455" fo:border="1pt solid #112233" fo:padding="6pt" style:vertical-align="middle"/>
+      <style:text-properties fo:color="#ffffff" fo:font-weight="bold"/>
+    </style:style>
+    <style:style style:name="TableBodyCell" style:family="table-cell">
+      <style:table-cell-properties fo:background-color="#eef2ff" fo:border="1pt solid #94a3b8" fo:padding="4pt"/>
+    </style:style>
   </office:automatic-styles>
   <office:body>
     <office:presentation>
@@ -44,10 +66,23 @@ const contentXml = `<?xml version="1.0" encoding="UTF-8"?>
           <draw:rect draw:name="Grouped rectangle" draw:style-name="gr1" svg:x="0.25in" svg:y="0.25in" svg:width="1in" svg:height="0.5in"/>
         </draw:g>
         <draw:frame draw:name="Table" svg:x="3in" svg:y="4in" svg:width="5in" svg:height="2in">
-          <table:table>
-            <table:table-header-rows><table:table-row><table:table-cell><text:p>Header</text:p></table:table-cell></table:table-row></table:table-header-rows>
-            <table:table-row><table:table-cell><text:p>Value</text:p></table:table-cell></table:table-row>
+          <table:table table:style-name="Table1">
+            <table:table-column table:style-name="TableColumn1"/>
+            <table:table-column table:style-name="TableColumn2"/>
+            <table:table-header-rows>
+              <table:table-row table:style-name="TableHeaderRow">
+                <table:table-cell table:style-name="TableHeaderCell" table:number-columns-spanned="2"><text:p>Summary</text:p></table:table-cell>
+                <table:covered-table-cell/>
+              </table:table-row>
+            </table:table-header-rows>
+            <table:table-row table:style-name="TableBodyRow">
+              <table:table-cell table:style-name="TableBodyCell"><text:p>Revenue</text:p></table:table-cell>
+              <table:table-cell table:style-name="TableBodyCell"><text:p>42</text:p></table:table-cell>
+            </table:table-row>
           </table:table>
+        </draw:frame>
+        <draw:frame draw:name="Revenue Chart" svg:x="0.75in" svg:y="5.25in" svg:width="2in" svg:height="1.5in">
+          <draw:object xlink:href="./Object 1" xlink:type="simple"/>
         </draw:frame>
         <presentation:notes><draw:frame><draw:text-box><text:p>Speaker note</text:p></draw:text-box></draw:frame></presentation:notes>
         <anim:par/>
@@ -81,6 +116,62 @@ const manifestXml = `<?xml version="1.0" encoding="UTF-8"?>
 <manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
   <manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.presentation"/>
   <manifest:file-entry manifest:full-path="Pictures/pixel.png" manifest:media-type="image/png"/>
+  <manifest:file-entry manifest:full-path="Object 1/" manifest:media-type="application/vnd.oasis.opendocument.chart"/>
+  <manifest:file-entry manifest:full-path="Object 1/content.xml" manifest:media-type="text/xml"/>
+  <manifest:file-entry manifest:full-path="Object 1/META-INF/manifest.xml" manifest:media-type="text/xml"/>
+</manifest:manifest>`;
+
+const chartContentXml = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:body>
+    <office:chart>
+      <chart:chart chart:class="chart:bar">
+        <chart:title><text:p>Quarterly Revenue</text:p></chart:title>
+        <chart:legend chart:legend-position="end"/>
+        <chart:plot-area>
+          <chart:axis chart:dimension="x" chart:name="primary-x">
+            <chart:title><text:p>Quarter</text:p></chart:title>
+            <chart:categories table:cell-range-address="local-table.A2:A4"/>
+          </chart:axis>
+          <chart:axis chart:dimension="y" chart:name="primary-y">
+            <chart:title><text:p>Revenue</text:p></chart:title>
+          </chart:axis>
+          <chart:series
+            chart:class="chart:bar"
+            chart:label-cell-address="local-table.B1"
+            chart:values-cell-range-address="local-table.B2:B4"/>
+        </chart:plot-area>
+        <table:table table:name="local-table">
+          <table:table-row>
+            <table:table-cell office:value-type="string"><text:p>Quarter</text:p></table:table-cell>
+            <table:table-cell office:value-type="string"><text:p>Sales</text:p></table:table-cell>
+          </table:table-row>
+          <table:table-row>
+            <table:table-cell office:value-type="string"><text:p>Q1</text:p></table:table-cell>
+            <table:table-cell office:value-type="float" office:value="12"><text:p>12</text:p></table:table-cell>
+          </table:table-row>
+          <table:table-row>
+            <table:table-cell office:value-type="string"><text:p>Q2</text:p></table:table-cell>
+            <table:table-cell office:value-type="float" office:value="18"><text:p>18</text:p></table:table-cell>
+          </table:table-row>
+          <table:table-row>
+            <table:table-cell office:value-type="string"><text:p>Q3</text:p></table:table-cell>
+            <table:table-cell office:value-type="float" office:value="15"><text:p>15</text:p></table:table-cell>
+          </table:table-row>
+        </table:table>
+      </chart:chart>
+    </office:chart>
+  </office:body>
+</office:document-content>`;
+
+const chartManifestXml = `<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
+  <manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.chart"/>
+  <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
 </manifest:manifest>`;
 
 const metaXml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -96,6 +187,8 @@ function fixture(): ArrayBuffer {
     'meta.xml': strToU8(metaXml),
     'META-INF/manifest.xml': strToU8(manifestXml),
     'Pictures/pixel.png': new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+    'Object 1/content.xml': strToU8(chartContentXml),
+    'Object 1/META-INF/manifest.xml': strToU8(chartManifestXml),
   });
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
@@ -111,13 +204,69 @@ describe('ODP importer', () => {
     expect(result.document.slides).toHaveLength(1);
     expect(result.document.slides[0]).toMatchObject({ name: 'ODP Slide', notes: 'Speaker note', background: '#112233' });
     expect(new Set(result.document.slides[0]?.elements.map((element) => element.type))).toEqual(
-      new Set(['text', 'image', 'shape', 'table']),
+      new Set(['text', 'image', 'shape', 'table', 'chart']),
+    );
+    expect(result.document.slides[0]?.elements.every((element) => element.transform.z === 0)).toBe(true);
+    expect(result.document.slides[0]?.elements.map((element) => element.renderOrder)).toEqual(
+      result.document.slides[0]?.elements.map((_, index) => index),
     );
     const groupedFrame = result.document.slides[0]?.elements.find((element) => element.name === 'Grouped rectangle')?.frame;
     expect(groupedFrame?.x).toBeCloseTo(0.1);
     expect(groupedFrame?.y).toBeCloseTo(0.6);
     expect(groupedFrame?.width).toBeCloseTo(0.1);
     expect(groupedFrame?.height).toBeCloseTo(1 / 15);
+    const importedText = result.document.slides[0]?.elements.find((element) => element.type === 'text');
+    const importedImage = result.document.slides[0]?.elements.find((element) => element.type === 'image');
+    expect(importedText && elementWorldTransform(importedText, result.document.size).size.depth).toBe(0);
+    expect(importedImage && elementWorldTransform(importedImage, result.document.size).size.depth).toBe(0);
+    const importedTable = result.document.slides[0]?.elements.find((element) => element.type === 'table');
+    expect(importedTable?.type).toBe('table');
+    if (importedTable?.type !== 'table') throw new Error('Expected imported table');
+    expect(importedTable.frame.x).toBeCloseTo(0.3);
+    expect(importedTable.frame.y).toBeCloseTo(8 / 15);
+    expect(importedTable.frame.width).toBeCloseTo(0.5);
+    expect(importedTable.frame.height).toBeCloseTo(4 / 15);
+    expect(importedTable.columns).toEqual([192, 288]);
+    expect(importedTable.rows.map((row) => row.height)).toEqual([48, 36]);
+    expect(importedTable.rows[0]?.cells).toHaveLength(1);
+    expect(importedTable.rows[0]?.cells[0]).toMatchObject({
+      column: 0,
+      text: 'Summary',
+      columnSpan: 2,
+      header: true,
+      style: { fill: '#334455', verticalAlign: 'middle' },
+    });
+    expect(importedTable.rows[1]?.cells.map((cell) => ({ column: cell.column, text: cell.text }))).toEqual([
+      { column: 0, text: 'Revenue' },
+      { column: 1, text: '42' },
+    ]);
+    expect(importedTable.rows[1]?.cells.every((cell) => cell.header !== true)).toBe(true);
+    const importedChart = result.document.slides[0]?.elements.find((element) => element.type === 'chart');
+    expect(importedChart?.type).toBe('chart');
+    if (importedChart?.type !== 'chart') throw new Error('Expected imported chart');
+    expect(importedChart.title).toBe('Quarterly Revenue');
+    expect(importedChart.legend).toMatchObject({ visible: true, position: 'right', overlay: false });
+    expect(importedChart.axes).toEqual([
+      expect.objectContaining({ kind: 'category', position: 'bottom', visible: true, title: 'Quarter' }),
+      expect.objectContaining({ kind: 'value', position: 'left', visible: true, title: 'Revenue' }),
+    ]);
+    expect(importedChart.plots).toHaveLength(1);
+    expect(importedChart.plots[0]).toMatchObject({
+      type: 'bar',
+      grouping: 'clustered',
+      direction: 'column',
+      axisIds: importedChart.axes.map((axis) => axis.id),
+    });
+    expect(importedChart.plots[0]?.series).toEqual([
+      {
+        name: 'Sales',
+        points: [
+          { label: 'Q1', value: 12 },
+          { label: 'Q2', value: 18 },
+          { label: 'Q3', value: 15 },
+        ],
+      },
+    ]);
     expect(result.assets.size).toBe(1);
     expect(result.report.warnings.map((warning) => warning.code)).toContain('ODP_ANIMATION_UNSUPPORTED');
   });

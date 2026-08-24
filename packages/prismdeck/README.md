@@ -7,10 +7,16 @@ Browser-native spatial presentation SDK used by
 
 - Local `.pptx`, `.odp`, `.prismdeck`, and PrismDeck HTML import.
 - Versioned normalized document and asset bundle.
-- Three.js mono, full-SBS, and half-SBS rendering from one scene.
+- Canvas2D flat-slide rendering plus Three.js mono, full-SBS, and half-SBS spatial rendering.
 - Editable depth, rotation, thickness, text, and optional Rapier physics.
+- Source-independent semantic charts and merged/styled tables with deterministic ECharts SVG rendering.
+- Planar imported elements by default with explicit opt-in extrusion.
+- Native cut, fade, and slide transitions with reduced-motion fallback.
+- Non-occluding per-slide scene background colors.
+- Convergence-relative stereo depth calibration and aspect-correct slide textures.
 - PowerPoint and ODP template layouts that can instantiate slides.
 - Single-file editable HTML export with CDN-hosted Three.js playback.
+- Active-slide screen-reader tables for presentation tables and chart data.
 
 ## Basic use
 
@@ -22,12 +28,14 @@ const deck = await importPresentation(input, { sourceName: file.name });
 const player = await DeckPlayer.create(canvas, deck, {
   physics: true,
   autoStart: true,
+  renderer: { overlayCanvas },
 });
 ```
 
 Call `player.dispose()` when the canvas is no longer used. Imported files are
 parsed locally; the SDK does not upload source bytes or execute macros, scripts,
-or OLE objects.
+or OLE objects. `overlayCanvas` is optional; when supplied and positioned above
+the WebGL canvas, flat zero-depth slides use it for crisp Canvas2D output.
 
 ## Browser module and HTML export
 
@@ -42,4 +50,5 @@ installed `prismdeckjs` package version and can be overridden with an absolute
 HTTPS URL.
 
 See the [repository](https://github.com/lunarmoon26/PrismDeckJS) for the schema,
-compatibility policy, Studio, and development instructions.
+element contract, PPTX/ODP compatibility matrix, Studio, and development
+instructions.

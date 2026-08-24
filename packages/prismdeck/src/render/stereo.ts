@@ -25,6 +25,37 @@ export interface StereoCameraRigOptions {
   aspect?: number;
 }
 
+export const DEFAULT_STEREO_EYE_SEPARATION_RATIO = 0.04;
+export const MAX_STEREO_EYE_SEPARATION_RATIO = 0.06;
+
+export function pinholeScale(focalDistance: number, depthBehindPlane: number): number {
+  if (!Number.isFinite(focalDistance) || focalDistance <= 0) throw new RangeError('focalDistance must be positive');
+  if (!Number.isFinite(depthBehindPlane) || focalDistance + depthBehindPlane <= 0) {
+    throw new RangeError('depth must remain behind the pinhole');
+  }
+  return focalDistance / (focalDistance + depthBehindPlane);
+}
+
+export function projectPinholePoint(
+  point: { x: number; y: number },
+  center: { x: number; y: number },
+  focalDistance: number,
+  depthBehindPlane: number,
+): { x: number; y: number; scale: number } {
+  const scale = pinholeScale(focalDistance, depthBehindPlane);
+  return {
+    x: center.x + (point.x - center.x) * scale,
+    y: center.y + (point.y - center.y) * scale,
+    scale,
+  };
+}
+
+export function scaledStereoEyeSeparationRatio(baseRatio: number, depthScale = 1): number {
+  if (!Number.isFinite(baseRatio) || baseRatio < 0) throw new RangeError('baseRatio must not be negative');
+  const normalizedScale = Math.max(0, Math.min(1.5, Number.isFinite(depthScale) ? depthScale : 1));
+  return Math.min(MAX_STEREO_EYE_SEPARATION_RATIO, baseRatio * normalizedScale);
+}
+
 function configureEye(
   camera: PerspectiveCamera,
   eyeOffset: number,

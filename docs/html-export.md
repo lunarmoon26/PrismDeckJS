@@ -10,9 +10,15 @@ travel together and can be imported back into PrismDeck Studio for editing.
 
 The viewer imports the version-pinned `prism-deck.min.js` ES module from
 jsDelivr, creates one `DeckPlayer`, and provides previous/next controls plus
-keyboard navigation. Three.js and the non-physics PrismDeck runtime load from
-that module. Viewing requires network access to the CDN; presentation data and
-assets do not leave the file.
+keyboard navigation. Three.js, the Canvas2D presentation layer, and the
+non-physics PrismDeck runtime load from that module. Viewing requires network
+access to the CDN; presentation data and assets do not leave the file.
+
+The viewer synchronizes an off-screen semantic section with the active slide.
+Text remains text, presentation tables become native HTML tables with header and
+span semantics, and each chart exposes a caption plus a data table. This layer is
+derived only from validated document data and uses DOM text APIs rather than
+interpreting imported markup.
 
 Importing HTML never executes scripts from the file. PrismDeck extracts only its
 exact inert data marker, then applies the normal archive limits, digest checks,
@@ -53,6 +59,8 @@ Generated artifacts belong under `generated/`, which remains untracked.
 
 - A deck with a binary asset round-trips through HTML without data loss.
 - Studio exports and re-imports HTML without executing file-authored code.
+- The viewer resizes and composites its WebGL and Canvas2D surfaces together.
+- Screen readers receive active-slide chart and table semantics even though the visual presentation uses canvases.
 - The npm package contains `dist/prism-deck.min.js` and identifies it as its
   jsDelivr/unpkg browser entry.
 - A published GitHub release validates, tests, builds, packs, and publishes the

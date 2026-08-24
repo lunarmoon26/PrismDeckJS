@@ -80,7 +80,8 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
     :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#151311;color:#f7f2ec}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{display:grid;grid-template-rows:1fr auto}
     main{position:relative;min-height:0;background:radial-gradient(circle at 50% 40%,#36312c,#161412 72%)}
-    canvas{display:block;width:100%;height:100%}.status{position:absolute;inset:0;display:grid;place-items:center;padding:2rem;text-align:center;background:#151311}
+    canvas{display:block;position:absolute;inset:0;width:100%;height:100%}canvas.overlay{pointer-events:none}.status{position:absolute;inset:0;display:grid;place-items:center;padding:2rem;text-align:center;background:#151311}
+    .sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
     nav{height:58px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 18px;border-top:1px solid #39342f;background:#211e1b}
     .title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.controls{display:flex;align-items:center;gap:10px}
     button{width:34px;height:34px;border:1px solid #514a44;border-radius:50%;background:#2b2723;color:#f7f2ec;font:700 16px inherit;cursor:pointer}
@@ -88,7 +89,7 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
   </style>
 </head>
 <body>
-  <main><canvas aria-label="Interactive 3D presentation canvas"></canvas><div class="status">Loading presentation…</div></main>
+  <main><canvas class="webgl" aria-label="Interactive 3D presentation canvas" aria-describedby="slide-semantics"></canvas><canvas class="overlay" aria-hidden="true"></canvas><section class="sr-only" id="slide-semantics" aria-live="polite" aria-label="Current slide content"></section><div class="status">Loading presentation…</div></main>
   <nav aria-label="Presentation controls"><div class="title"></div><div class="controls"><button type="button" data-action="previous" aria-label="Previous slide">←</button><button type="button" data-action="next" aria-label="Next slide">→</button></div><div class="count"></div></nav>
   ${DATA_OPEN}${archiveBase64}${DATA_CLOSE}
   <script type="module">
@@ -100,12 +101,138 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
       const bytes = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
       const deck = await PrismDeck.loadPrismDeck(bytes);
-      const canvas = document.querySelector('canvas');
-      const player = await PrismDeck.DeckPlayer.create(canvas, deck, { autoStart: true });
+      const canvas = document.querySelector('canvas.webgl');
+      const overlayCanvas = document.querySelector('canvas.overlay');
+      const player = await PrismDeck.DeckPlayer.create(canvas, deck, { autoStart: true, renderer: { overlayCanvas } });
       const previous = document.querySelector('[data-action="previous"]');
       const next = document.querySelector('[data-action="next"]');
       const title = document.querySelector('.title');
       const count = document.querySelector('.count');
+      const semantics = document.getElementById('slide-semantics');
+      const MAX_SEMANTIC_ROWS = 500;
+      const MAX_SEMANTIC_CELLS = 5000;
+      const addText = (parent, tag, value) => {
+        if (value === undefined || value === null) return;
+        const node = document.createElement(tag);
+        node.textContent = String(value);
+        parent.appendChild(node);
+      };
+      const pointValue = (point) => {
+        if (point.value !== undefined && point.value !== null) return point.value;
+        if (point.x !== undefined || point.y !== undefined) {
+          const values = [];
+          if (point.x !== undefined && point.x !== null) values.push('x ' + point.x);
+          if (point.y !== undefined && point.y !== null) values.push('y ' + point.y);
+          if (point.size !== undefined && point.size !== null) values.push('size ' + point.size);
+          return values.join(', ');
+        }
+        if (point.open !== undefined || point.high !== undefined || point.low !== undefined || point.close !== undefined) {
+          return ['open', 'high', 'low', 'close']
+            .filter((key) => point[key] !== undefined && point[key] !== null)
+            .map((key) => key + ' ' + point[key])
+            .join(', ');
+        }
+        return Array.isArray(point.values) ? point.values.filter((value) => value !== null).join(', ') : '';
+      };
+      const appendTable = (parent, element, budget) => {
+        const table = document.createElement('table');
+        table.setAttribute('aria-label', element.name || 'Table');
+        for (let rowIndex = 0; rowIndex < element.rows.length; rowIndex += 1) {
+          if (budget.rows <= 0 || budget.cells <= 0) {
+            budget.truncated = true;
+            break;
+          }
+          const row = element.rows[rowIndex];
+          const tr = document.createElement('tr');
+          const cells = [...row.cells].sort((first, second) => first.column - second.column);
+          for (let cellIndex = 0; cellIndex < cells.length; cellIndex += 1) {
+            if (budget.cells <= 0) {
+              budget.truncated = true;
+              break;
+            }
+            const cell = cells[cellIndex];
+            const td = document.createElement(cell.header ? 'th' : 'td');
+            if (cell.header) td.scope = 'col';
+            if (cell.columnSpan > 1) td.colSpan = cell.columnSpan;
+            if (cell.rowSpan > 1) td.rowSpan = cell.rowSpan;
+            td.textContent = cell.text;
+            tr.appendChild(td);
+            budget.cells -= 1;
+          }
+          table.appendChild(tr);
+          budget.rows -= 1;
+        }
+        parent.appendChild(table);
+      };
+      const appendChart = (parent, element, budget) => {
+        const figure = document.createElement('figure');
+        addText(figure, 'figcaption', element.title || element.name || 'Chart');
+        for (let plotIndex = 0; plotIndex < element.plots.length; plotIndex += 1) {
+          if (budget.rows <= 0 || budget.cells <= 0) {
+            budget.truncated = true;
+            break;
+          }
+          const plot = element.plots[plotIndex];
+          const table = document.createElement('table');
+          table.setAttribute('aria-label', plot.type + ' chart data');
+          const header = document.createElement('tr');
+          addText(header, 'th', 'Category');
+          budget.cells -= 1;
+          for (let seriesIndex = 0; seriesIndex < plot.series.length; seriesIndex += 1) {
+            if (budget.cells <= 0) {
+              budget.truncated = true;
+              break;
+            }
+            const series = plot.series[seriesIndex];
+            addText(header, 'th', series.name || 'Series');
+            budget.cells -= 1;
+          }
+          table.appendChild(header);
+          budget.rows -= 1;
+          const availablePointCount = Math.max(0, ...plot.series.map((series) => series.points.length));
+          const pointCount = Math.min(budget.rows, availablePointCount);
+          if (pointCount < availablePointCount) budget.truncated = true;
+          for (let pointIndex = 0; pointIndex < pointCount; pointIndex += 1) {
+            if (budget.cells <= 0) {
+              budget.truncated = true;
+              break;
+            }
+            const row = document.createElement('tr');
+            const labelPoint = plot.series.find((series) => series.points[pointIndex]?.label)?.points[pointIndex];
+            addText(row, 'th', labelPoint?.label || String(pointIndex + 1));
+            budget.cells -= 1;
+            for (let seriesIndex = 0; seriesIndex < plot.series.length; seriesIndex += 1) {
+              if (budget.cells <= 0) {
+                budget.truncated = true;
+                break;
+              }
+              const series = plot.series[seriesIndex];
+              addText(row, 'td', pointValue(series.points[pointIndex] || {}));
+              budget.cells -= 1;
+            }
+            table.appendChild(row);
+            budget.rows -= 1;
+          }
+          figure.appendChild(table);
+        }
+        parent.appendChild(figure);
+      };
+      const syncSemantics = () => {
+        semantics.replaceChildren();
+        const slide = player.session.currentSlide;
+        if (!slide) return;
+        const budget = { rows: MAX_SEMANTIC_ROWS, cells: MAX_SEMANTIC_CELLS, truncated: false };
+        addText(semantics, 'h1', slide.name || player.session.document.metadata.title);
+        for (const element of [...slide.elements].filter((element) => element.visible).sort((first, second) => first.renderOrder - second.renderOrder)) {
+          if (element.type === 'text') addText(semantics, 'p', element.text);
+          else if (element.type === 'shape') addText(semantics, 'p', element.text);
+          else if (element.type === 'image') addText(semantics, 'p', element.alt || element.name);
+          else if (element.type === 'table') appendTable(semantics, element, budget);
+          else if (element.type === 'chart') appendChart(semantics, element, budget);
+          else if (element.type === 'unsupported') addText(semantics, 'p', element.fallbackText || element.reason);
+        }
+        if (budget.truncated) addText(semantics, 'p', 'Additional chart or table data is omitted from the accessibility summary.');
+      };
       const sync = () => {
         const index = player.session.currentSlideIndex;
         const total = player.session.document.slides.length;
@@ -113,6 +240,7 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
         count.textContent = total === 0 ? '0 / 0' : (index + 1) + ' / ' + total;
         previous.disabled = index <= 0;
         next.disabled = index < 0 || index >= total - 1;
+        syncSemantics();
       };
       previous.addEventListener('click', () => player.session.previous());
       next.addEventListener('click', () => player.session.next());

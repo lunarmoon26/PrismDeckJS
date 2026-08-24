@@ -163,7 +163,7 @@ export class PresentationSession extends EventTarget {
       name: options.name ?? `Slide ${this._document.slides.length + 1}`,
       layoutId,
       durationMs: options.durationMs ?? 5_000,
-      background: options.background ?? '#FFFFFF',
+      background: options.background ?? this.currentSlide?.background ?? '#FFFFFF',
       elements: layout.elements.map(cloneLayoutElement),
     };
     const insertAt = Math.min(
@@ -183,6 +183,21 @@ export class PresentationSession extends EventTarget {
     if (!element) return false;
     element.transform = { ...element.transform, ...patch };
     this.emit('content', elementId);
+    return true;
+  }
+
+  addElement(element: DeckElement): boolean {
+    const elements = this.currentSlide?.elements;
+    if (!elements || elements.some((candidate) => candidate.id === element.id)) return false;
+    const cloned = JSON.parse(JSON.stringify(element)) as DeckElement;
+    elements.push(cloned);
+    try {
+      validateDeckDocument(this._document);
+    } catch (error) {
+      elements.pop();
+      throw error;
+    }
+    this.emit('content', cloned.id);
     return true;
   }
 
