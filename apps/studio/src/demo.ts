@@ -347,29 +347,31 @@ export function createDemoDeck(themeId: DeckThemeId = 'edge'): LoadedDeck {
     fallbackText: 'Visible fallback + structured warning',
   };
   const physicsGrid: ShapeElement[] = [
-    ...Array.from({ length: 6 }, (_, index) => panel({
+    ...Array.from({ length: 8 }, (_, index) => panel({
       id: `physics-grid-row-${index + 1}`,
       name: 'Physics ground grid',
-      frame: { x: 0.05, y: 0.7 + index * 0.032, width: 0.9, height: 0.002 },
+      frame: { x: 0.05, y: 0.842, width: 0.9, height: 0.002 },
       shape: 'rectangle',
       fill: HUD.primary,
       stroke: HUD.primary,
       strokeWidth: 0.2,
       opacity: 0.16,
-      z: 0.068,
-      renderOrder: 0,
+      z: 0.5 - index * 0.2,
+      rotationX: -90,
+      renderOrder: 1,
     })),
-    ...Array.from({ length: 11 }, (_, index) => panel({
+    ...Array.from({ length: 9 }, (_, index) => panel({
       id: `physics-grid-column-${index + 1}`,
       name: 'Physics ground grid',
-      frame: { x: 0.05 + index * 0.09, y: 0.7, width: 0.002, height: 0.175 },
+      frame: { x: 0.05 + index * 0.1125, y: 0.143, width: 0.002, height: 1.4 },
       shape: 'rectangle',
       fill: HUD.primary,
       stroke: HUD.primary,
       strokeWidth: 0.2,
       opacity: 0.16,
-      z: 0.068,
-      renderOrder: 0,
+      z: -0.2,
+      rotationX: -90,
+      renderOrder: 1,
     })),
   ];
 
@@ -534,10 +536,11 @@ export function createDemoDeck(themeId: DeckThemeId = 'edge'): LoadedDeck {
         panel({ id: 'stereo-mono', name: 'Mono output', frame: { x: 0.075, y: 0.49, width: 0.17, height: 0.16 }, label: 'MONO\n16:9', stroke: HUD.warning, textColor: HUD.warning, labelSize: 0.025 }),
         panel({ id: 'stereo-full', name: 'Full SBS output', frame: { x: 0.27, y: 0.49, width: 0.17, height: 0.16 }, label: 'FULL SBS\n2 x 16:9', stroke: HUD.primary, textColor: HUD.primary, labelSize: 0.025 }),
         panel({ id: 'stereo-half', name: 'Half SBS output', frame: { x: 0.465, y: 0.49, width: 0.17, height: 0.16 }, label: 'HALF SBS\nSQUEEZED', stroke: HUD.accent, textColor: HUD.accent, labelSize: 0.025 }),
+        panel({ id: 'physics-ground', name: 'Full scene physics ground', frame: { x: 0.05, y: 0.15, width: 0.9, height: 1.4 }, shape: 'rectangle', fill: HUD.surface, stroke: HUD.primary, strokeWidth: 0.4, opacity: 0.12, z: -0.2, rotationX: -90, thickness: 0.1, renderOrder: 0, physics: { body: 'fixed', shape: 'cuboid', density: 1, restitution: 0.55, friction: 0.8 } }),
         ...physicsGrid,
-        panel({ id: 'physics-floor', name: 'Fixed physics floor', frame: { x: 0.05, y: 0.875, width: 0.9, height: 0.035 }, fill: HUD.surface, stroke: HUD.primary, z: 0.06, thickness: 0.1, physics: { body: 'fixed', shape: 'cuboid', density: 1, restitution: 0.72, friction: 0.7 } }),
+        panel({ id: 'physics-floor', name: 'Fixed physics platform', frame: { x: 0.68, y: 0.755, width: 0.27, height: 0.035 }, fill: HUD.surface, stroke: HUD.primary, z: 0.06, thickness: 0.1, physics: { body: 'fixed', shape: 'cuboid', density: 1, restitution: 0.72, friction: 0.7 } }),
         panel({ id: 'physics-ball', name: 'Dynamic physics sphere', frame: { x: 0.765, y: 0.22, width: 0.1, height: 0.178 }, shape: 'ellipse', fill: HUD.accent, stroke: HUD.accent, z: 0.06, thickness: 0.18, physics: { body: 'dynamic', shape: 'ball', density: 1, restitution: 0.82, friction: 0.25 } }),
-        text({ id: 'physics-label', name: 'Physics label', text: 'RAPIER GRAVITY  /  FIXED STEP', frame: { x: 0.67, y: 0.825, width: 0.28, height: 0.035 }, style: { fontSize: 0.016, fontWeight: 700, color: HUD.success, align: 'center', lineHeight: 1.3 } }),
+        text({ id: 'physics-label', name: 'Physics label', text: 'RAPIER GRAVITY  /  FIXED STEP', frame: { x: 0.68, y: 0.82, width: 0.27, height: 0.04 }, style: { fontSize: 0.016, fontWeight: 700, color: HUD.success, align: 'center', lineHeight: 1.3 } }),
       ],
       'Physics advances once per fixed step, while mono or stereo cameras project the same world without duplicating state.',
     ),
