@@ -77,6 +77,13 @@ export interface ElementClientQuad {
   bottomLeft: ClientPoint;
 }
 
+export interface OutputViewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface CanvasOverlayEntry {
   object: Object3D;
   source: HTMLCanvasElement;
@@ -88,6 +95,22 @@ interface CanvasOverlayEntry {
 
 const SLIDE_HEIGHT = 10;
 const MIN_THICKNESS = 0.025;
+
+export function outputViewport(mode: OutputMode, width: number, height: number): OutputViewport {
+  const canvasWidth = Math.max(1, width);
+  const canvasHeight = Math.max(1, height);
+  if (mode !== 'full-sbs') return { x: 0, y: 0, width: canvasWidth, height: canvasHeight };
+
+  const outputAspect = OUTPUT_PRESETS[mode].width / OUTPUT_PRESETS[mode].height;
+  const viewportWidth = Math.min(canvasWidth, canvasHeight * outputAspect);
+  const viewportHeight = viewportWidth / outputAspect;
+  return {
+    x: (canvasWidth - viewportWidth) / 2,
+    y: (canvasHeight - viewportHeight) / 2,
+    width: viewportWidth,
+    height: viewportHeight,
+  };
+}
 
 function degrees(value: number): number {
   return (value * Math.PI) / 180;
@@ -525,13 +548,14 @@ export class DeckRenderer {
     if (this.outputMode === 'mono') {
       this.renderer.render(this.scene, this.camera);
     } else {
-      const eyeWidth = Math.floor(this.width / 2);
+      const viewport = outputViewport(this.outputMode, this.width, this.height);
+      const eyeWidth = Math.floor(viewport.width / 2);
       this.renderer.setScissorTest(true);
-      this.renderer.setViewport(0, 0, eyeWidth, this.height);
-      this.renderer.setScissor(0, 0, eyeWidth, this.height);
+      this.renderer.setViewport(viewport.x, viewport.y, eyeWidth, viewport.height);
+      this.renderer.setScissor(viewport.x, viewport.y, eyeWidth, viewport.height);
       this.renderer.render(this.scene, this.leftCamera);
-      this.renderer.setViewport(eyeWidth, 0, this.width - eyeWidth, this.height);
-      this.renderer.setScissor(eyeWidth, 0, this.width - eyeWidth, this.height);
+      this.renderer.setViewport(viewport.x + eyeWidth, viewport.y, viewport.width - eyeWidth, viewport.height);
+      this.renderer.setScissor(viewport.x + eyeWidth, viewport.y, viewport.width - eyeWidth, viewport.height);
       this.renderer.render(this.scene, this.rightCamera);
       this.renderer.setScissorTest(false);
     }
@@ -540,14 +564,20 @@ export class DeckRenderer {
 
   pick(clientX: number, clientY: number): string | undefined {
     const bounds = this.canvas.getBoundingClientRect();
-    const normalizedX = (clientX - bounds.left) / bounds.width;
-    const normalizedY = (clientY - bounds.top) / bounds.height;
+    const viewport = outputViewport(this.outputMode, bounds.width, bounds.height);
+    const viewportX = clientX - bounds.left - viewport.x;
+    const viewportY = clientY - bounds.top - viewport.y;
+    if (viewportX < 0 || viewportX > viewport.width || viewportY < 0 || viewportY > viewport.height) return undefined;
+    const normalizedX = viewportX / viewport.width;
+    const normalizedY = viewportY / viewport.height;
     let camera: PerspectiveCamera = this.camera;
     let eyeX = normalizedX;
     if (this.outputMode !== 'mono') {
-      const rightEye = normalizedX >= 0.5;
+      const leftEyeWidth = Math.floor(viewport.width / 2);
+      const rightEye = viewportX >= leftEyeWidth;
+      const eyeWidth = rightEye ? viewport.width - leftEyeWidth : leftEyeWidth;
       camera = rightEye ? this.rightCamera : this.leftCamera;
-      eyeX = rightEye ? (normalizedX - 0.5) * 2 : normalizedX * 2;
+      eyeX = (viewportX - (rightEye ? leftEyeWidth : 0)) / eyeWidth;
     }
     this.pointer.set(eyeX * 2 - 1, -(normalizedY * 2 - 1));
     this.raycaster.setFromCamera(this.pointer, camera);
@@ -571,14 +601,23 @@ export class DeckRenderer {
     const size = this.activeDeckSize;
     if (!size) return undefined;
     const bounds = this.canvas.getBoundingClientRect();
-    const normalizedX = (clientX - bounds.left) / bounds.width;
-    const normalizedY = (clientY - bounds.top) / bounds.height;
+    const viewport = outputViewport(this.outputMode, bounds.width, bounds.height);
+    const viewportX = clientX - bounds.left - viewport.x;
+    const viewportY = clientY - bounds.top - viewport.y;
+    if (!clampToBounds && (viewportX < 0 || viewportX > viewport.width || viewportY < 0 || viewportY > viewport.height)) {
+      return undefined;
+    }
+    const constrainedViewportX = Math.max(0, Math.min(viewport.width, viewportX));
+    const normalizedX = constrainedViewportX / viewport.width;
+    const normalizedY = Math.max(0, Math.min(1, viewportY / viewport.height));
     let camera = this.camera;
     let eyeX = normalizedX;
     if (this.outputMode !== 'mono') {
-      const rightEye = normalizedX >= 0.5;
+      const leftEyeWidth = Math.floor(viewport.width / 2);
+      const rightEye = constrainedViewportX >= leftEyeWidth;
+      const eyeWidth = rightEye ? viewport.width - leftEyeWidth : leftEyeWidth;
       camera = rightEye ? this.rightCamera : this.leftCamera;
-      eyeX = rightEye ? (normalizedX - 0.5) * 2 : normalizedX * 2;
+      eyeX = (constrainedViewportX - (rightEye ? leftEyeWidth : 0)) / eyeWidth;
     }
     this.pointer.set(eyeX * 2 - 1, -(normalizedY * 2 - 1));
     this.raycaster.setFromCamera(this.pointer, camera);
@@ -601,6 +640,7 @@ export class DeckRenderer {
     if (!object || !size || !element) return [];
     const bounds = this.canvas.getBoundingClientRect();
     if (bounds.width <= 0 || bounds.height <= 0) return [];
+    const viewport = outputViewport(this.outputMode, bounds.width, bounds.height);
     const worldSize = elementWorldSize(element, size);
     this.slideGroup.updateMatrixWorld(true);
     const project = (camera: PerspectiveCamera, viewportX: number, viewportWidth: number): ElementClientQuad => {
@@ -608,7 +648,7 @@ export class DeckRenderer {
         const projected = new Vector3(x, y, 0).applyMatrix4(object.matrixWorld).project(camera);
         return {
           x: viewportX + (projected.x + 1) * viewportWidth / 2,
-          y: (1 - projected.y) * bounds.height / 2,
+          y: viewport.y + (1 - projected.y) * viewport.height / 2,
         };
       };
       return {
@@ -618,9 +658,12 @@ export class DeckRenderer {
         bottomLeft: point(-worldSize.width / 2, -worldSize.height / 2),
       };
     };
-    if (this.outputMode === 'mono') return [project(this.camera, 0, bounds.width)];
-    const eyeWidth = bounds.width / 2;
-    return [project(this.leftCamera, 0, eyeWidth), project(this.rightCamera, eyeWidth, eyeWidth)];
+    if (this.outputMode === 'mono') return [project(this.camera, viewport.x, viewport.width)];
+    const eyeWidth = Math.floor(viewport.width / 2);
+    return [
+      project(this.leftCamera, viewport.x, eyeWidth),
+      project(this.rightCamera, viewport.x + eyeWidth, viewport.width - eyeWidth),
+    ];
   }
 
   snapshotCanvas(): HTMLCanvasElement {
@@ -914,13 +957,24 @@ export class DeckRenderer {
     this.slideGroup.updateMatrixWorld(true);
     const entries = [...this.overlayEntries].sort((first, second) => first.renderOrder - second.renderOrder);
     if (this.outputMode === 'mono') {
-      for (const entry of entries) this.drawCanvasOverlayEntry(context, entry, this.camera, 0, this.width, this.height);
+      for (const entry of entries) this.drawCanvasOverlayEntry(context, entry, this.camera, 0, 0, this.width, this.height);
       return;
     }
-    const eyeWidth = Math.floor(this.width / 2);
-    for (const entry of entries) this.drawCanvasOverlayEntry(context, entry, this.leftCamera, 0, eyeWidth, this.height);
+    const viewport = outputViewport(this.outputMode, this.width, this.height);
+    const eyeWidth = Math.floor(viewport.width / 2);
     for (const entry of entries) {
-      this.drawCanvasOverlayEntry(context, entry, this.rightCamera, eyeWidth, this.width - eyeWidth, this.height);
+      this.drawCanvasOverlayEntry(context, entry, this.leftCamera, viewport.x, viewport.y, eyeWidth, viewport.height);
+    }
+    for (const entry of entries) {
+      this.drawCanvasOverlayEntry(
+        context,
+        entry,
+        this.rightCamera,
+        viewport.x + eyeWidth,
+        viewport.y,
+        viewport.width - eyeWidth,
+        viewport.height,
+      );
     }
   }
 
@@ -929,6 +983,7 @@ export class DeckRenderer {
     entry: CanvasOverlayEntry,
     camera: PerspectiveCamera,
     viewportX: number,
+    viewportY: number,
     viewportWidth: number,
     viewportHeight: number,
   ): void {
@@ -936,7 +991,7 @@ export class DeckRenderer {
       const point = new Vector3(x, y, 0).applyMatrix4(entry.object.matrixWorld).project(camera);
       return {
         x: viewportX + (point.x + 1) * viewportWidth / 2,
-        y: (1 - point.y) * viewportHeight / 2,
+        y: viewportY + (1 - point.y) * viewportHeight / 2,
       };
     };
     const topLeft = project(-entry.width / 2, entry.height / 2);
@@ -944,7 +999,7 @@ export class DeckRenderer {
     const bottomLeft = project(-entry.width / 2, -entry.height / 2);
     context.save();
     context.beginPath();
-    context.rect(viewportX, 0, viewportWidth, viewportHeight);
+    context.rect(viewportX, viewportY, viewportWidth, viewportHeight);
     context.clip();
     context.globalAlpha = entry.opacity;
     context.transform(

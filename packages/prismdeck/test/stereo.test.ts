@@ -7,6 +7,7 @@ import {
   projectPinholePoint,
   scaledStereoEyeSeparationRatio,
 } from '../src/index';
+import { outputViewport } from '../src/render/renderer';
 
 describe('stereo camera rig', () => {
   test('uses pinhole scale and bounded depth calibration', () => {
@@ -40,5 +41,11 @@ describe('stereo camera rig', () => {
     expect(OUTPUT_PRESETS['full-sbs']).toMatchObject({ width: 3840, height: 1080, eyeWidth: 1920 });
     expect(OUTPUT_PRESETS['half-sbs']).toMatchObject({ width: 1920, height: 1080, eyeWidth: 960 });
     expect(OUTPUT_PRESETS['half-sbs'].logicalEyeAspect).toBe(16 / 9);
+  });
+
+  test('previews full SBS at its native 32:9 aspect while half SBS fills 16:9', () => {
+    expect(outputViewport('full-sbs', 1600, 900)).toEqual({ x: 0, y: 225, width: 1600, height: 450 });
+    expect(outputViewport('full-sbs', 3840, 1080)).toEqual({ x: 0, y: 0, width: 3840, height: 1080 });
+    expect(outputViewport('half-sbs', 1600, 900)).toEqual({ x: 0, y: 0, width: 1600, height: 900 });
   });
 });

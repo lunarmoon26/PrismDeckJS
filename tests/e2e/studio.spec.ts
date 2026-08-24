@@ -200,6 +200,8 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Full SBS' }).click();
   await expect(page.getByRole('button', { name: 'Full SBS' })).toHaveClass(/is-active/);
+  await expect(page.getByLabel('Output geometry')).toHaveText('3840 × 1080 · 1920 × 1080 / eye');
+  await expect(page.locator('.stage-toolbar').getByLabel('Insert element')).toBeVisible();
   await page.getByLabel('SBS depth scale').focus();
   await page.keyboard.press('End');
   await expect(page.getByText('1.50×')).toBeVisible();
@@ -370,7 +372,7 @@ test('keeps desktop panels bounded after shrinking and widening', async ({ page 
   await page.goto('/');
   await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
 
-  for (const width of [600, 821, 900, 1200, 1440]) {
+  for (const width of [600, 821, 900, 1000, 1200, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     if (width < 821) continue;
     await expect.poll(() => page.evaluate(() => {

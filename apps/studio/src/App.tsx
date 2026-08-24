@@ -18,6 +18,23 @@ import {
   type SessionChangeDetail,
   type TextStyle,
 } from 'prismdeckjs';
+import {
+  Camera,
+  ChartColumn,
+  Eye,
+  EyeOff,
+  FileCode2,
+  Image as ImageIcon,
+  Maximize2,
+  MousePointer2,
+  Package,
+  Plus,
+  Shapes,
+  Table2,
+  Type,
+  Upload,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useMemo, useReducer, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import { applyDemoTheme, createDemoDeck, detectDemoTheme } from './demo';
 import { DECK_THEMES, deckTheme, isDeckThemeId, type DeckThemeId } from './themes';
@@ -26,6 +43,24 @@ const OUTPUT_LABELS: Record<OutputMode, string> = {
   mono: 'Mono',
   'full-sbs': 'Full SBS',
   'half-sbs': 'Half SBS',
+};
+
+const OUTPUT_DETAILS: Record<OutputMode, { description: string; readout: string; stageLabel: string }> = {
+  mono: {
+    description: 'One standard 1920 by 1080 view.',
+    readout: '1920 × 1080 · single view',
+    stageLabel: '01 VIEW',
+  },
+  'full-sbs': {
+    description: 'Two full-width 1920 by 1080 eye views in a 3840 by 1080 frame.',
+    readout: '3840 × 1080 · 1920 × 1080 / eye',
+    stageLabel: '02 FULL EYES',
+  },
+  'half-sbs': {
+    description: 'Two horizontally compressed 960 by 1080 eye views in a 1920 by 1080 frame.',
+    readout: '1920 × 1080 · 960 × 1080 / eye',
+    stageLabel: '02 HALF EYES',
+  },
 };
 
 const THEME_STORAGE_KEY = 'prismdeck-demo-theme';
@@ -67,13 +102,13 @@ interface MoveGesture {
   moved: boolean;
 }
 
-const DRAWING_TOOLS: Array<{ id: DrawingTool; label: string; glyph: string }> = [
-  { id: 'select', label: 'Select', glyph: '↖' },
-  { id: 'text', label: 'Text box', glyph: 'T' },
-  { id: 'rectangle', label: 'Rectangle', glyph: '□' },
-  { id: 'roundedRectangle', label: 'Rounded rectangle', glyph: '▢' },
-  { id: 'ellipse', label: 'Ellipse', glyph: '○' },
-  { id: 'line', label: 'Line', glyph: '╱' },
+const DRAWING_TOOLS: Array<{ id: DrawingTool; label: string; icon: LucideIcon }> = [
+  { id: 'select', label: 'Select', icon: MousePointer2 },
+  { id: 'text', label: 'Text box', icon: Type },
+  { id: 'rectangle', label: 'Rectangle', icon: Shapes },
+  { id: 'roundedRectangle', label: 'Rounded rectangle', icon: Shapes },
+  { id: 'ellipse', label: 'Ellipse', icon: Shapes },
+  { id: 'line', label: 'Line', icon: Shapes },
 ];
 
 const RESIZE_HANDLES: ResizeHandle[] = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'];
@@ -1013,6 +1048,8 @@ export function App() {
     }
   }
 
+  const ActiveDrawingIcon = DRAWING_TOOLS.find((tool) => tool.id === drawingTool)?.icon ?? MousePointer2;
+
   return (
     <div className="studio-shell">
       <header className="topbar">
@@ -1026,30 +1063,11 @@ export function App() {
           <strong>{deckDocument?.metadata.title ?? 'No deck loaded'}{dirty && <em className="dirty-state">UNSAVED</em>}</strong>
         </div>
         <div className="topbar__actions">
-          <label className="insert-picker">
-            <span>Insert</span>
-            <select
-              aria-label="Insert element"
-              value={drawingTool}
-              disabled={!currentSlide}
-              onChange={(event) => chooseInsert(event.target.value as InsertChoice)}
-            >
-              {DRAWING_TOOLS.map((tool) => <option key={tool.id} value={tool.id}>{tool.label}</option>)}
-              <option value="image">Picture…</option>
-            </select>
-          </label>
-          <input
-            ref={imageInputRef}
-            className="visually-hidden-input"
-            aria-label="Insert picture file"
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-            onChange={(event) => void insertPicture(event)}
-          />
           <span className="local-badge"><span /> Files stay here</span>
           <label className="button button--primary file-button">
             <input aria-label="Import deck file" type="file" accept=".pptx,.odp,.prismdeck,.html,.htm" onChange={(event) => void importFile(event)} />
-            Import deck
+            <Upload aria-hidden="true" />
+            <span>Import deck</span>
           </label>
           <button
             className="button save-button"
@@ -1058,10 +1076,12 @@ export function App() {
             aria-label={dirty ? 'Save package, unsaved changes' : 'Save package'}
             onClick={() => void saveDeck()}
           >
-            Save package{dirty && <i className="save-dirty-dot" aria-hidden="true" />}
+            <Package aria-hidden="true" />
+            <span>Save package</span>{dirty && <i className="save-dirty-dot" aria-hidden="true" />}
           </button>
           <button className="button" type="button" disabled={!player} onClick={() => void exportHtml()}>
-            Export HTML
+            <FileCode2 aria-hidden="true" />
+            <span>Export HTML</span>
           </button>
         </div>
       </header>
@@ -1099,7 +1119,7 @@ export function App() {
                 {deckDocument?.layouts.map((layout) => <option value={layout.id} key={layout.id}>{layout.name}</option>)}
               </select>
             </label>
-            <button className="button button--wide" type="button" disabled={!selectedLayoutId} onClick={createSlide}>＋ Add slide</button>
+            <button className="button button--wide" type="button" disabled={!selectedLayoutId} onClick={createSlide}><Plus aria-hidden="true" /> Add slide</button>
           </div>
           {report && (
             <details className="import-report">
@@ -1115,12 +1135,41 @@ export function App() {
 
         <section className="stage-column">
           <div className="stage-toolbar">
-            <div className="mode-switch" aria-label="Output mode">
-              {(Object.keys(OUTPUT_LABELS) as OutputMode[]).map((mode) => (
-                <button type="button" key={mode} className={outputMode === mode ? 'is-active' : ''} onClick={() => setOutputMode(mode)}>
-                  {OUTPUT_LABELS[mode]}
-                </button>
-              ))}
+            <div className="stage-toolbar__tools">
+              <label className="insert-picker">
+                <ActiveDrawingIcon aria-hidden="true" />
+                <span>Insert</span>
+                <select
+                  aria-label="Insert element"
+                  value={drawingTool}
+                  disabled={!currentSlide}
+                  onChange={(event) => chooseInsert(event.target.value as InsertChoice)}
+                >
+                  {DRAWING_TOOLS.map((tool) => <option key={tool.id} value={tool.id}>{tool.label}</option>)}
+                  <option value="image">Picture…</option>
+                </select>
+              </label>
+              <input
+                ref={imageInputRef}
+                className="visually-hidden-input"
+                aria-label="Insert picture file"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                onChange={(event) => void insertPicture(event)}
+              />
+              <div className="mode-switch" aria-label="Output mode">
+                {(Object.keys(OUTPUT_LABELS) as OutputMode[]).map((mode) => (
+                  <button
+                    type="button"
+                    key={mode}
+                    className={outputMode === mode ? 'is-active' : ''}
+                    title={OUTPUT_DETAILS[mode].description}
+                    onClick={() => setOutputMode(mode)}
+                  >
+                    {OUTPUT_LABELS[mode]}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="stage-toolbar__meta">
               <label className="theme-picker">
@@ -1135,9 +1184,9 @@ export function App() {
                   {DECK_THEMES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                 </select>
               </label>
-              <span>{OUTPUT_PRESETS[outputMode].width} × {OUTPUT_PRESETS[outputMode].height}</span>
-              <button type="button" onClick={() => void captureFrame()} disabled={!currentSlide}>Capture PNG</button>
-              <button type="button" onClick={() => void stageRef.current?.requestFullscreen()}>Fullscreen</button>
+              <span aria-label="Output geometry">{OUTPUT_DETAILS[outputMode].readout}</span>
+              <button type="button" onClick={() => void captureFrame()} disabled={!currentSlide}><Camera aria-hidden="true" /> Capture PNG</button>
+              <button type="button" onClick={() => void stageRef.current?.requestFullscreen()}><Maximize2 aria-hidden="true" /> Fullscreen</button>
             </div>
           </div>
           <div
@@ -1155,7 +1204,7 @@ export function App() {
             />
             <canvas className="stage__overlay" ref={overlayCanvasRef} aria-hidden="true" />
             <div className="stage__grid" aria-hidden="true" />
-            <div className="stage__label"><span>LIVE SCENE</span><b>{outputMode === 'mono' ? '01 VIEW' : '02 EYES'}</b></div>
+            <div className="stage__label"><span>LIVE SCENE</span><b>{OUTPUT_DETAILS[outputMode].stageLabel}</b></div>
             {selectedElement && selectionQuads.length > 0 && (
               <div className="stage__selection-layer" aria-label={`Selected element: ${elementLabel(selectedElement)}`}>
                 <svg aria-hidden="true">
@@ -1269,9 +1318,9 @@ export function App() {
             </details>
             {!selectedElement ? (
               <div className="inspector-empty inspector-empty--compact">
-                <span className="inspector-empty__glyph">◇</span>
+                <MousePointer2 className="inspector-empty__glyph" aria-hidden="true" />
                 <b>Select or insert</b>
-                <p>Select an element, or choose a tool from the top Insert menu.</p>
+                <p>Select an element, or choose a tool from the Insert menu above the stage.</p>
               </div>
             ) : (
               <>
@@ -1405,8 +1454,10 @@ export function App() {
             <div>
               {currentSlide?.elements.map((element) => (
                 <button key={element.id} type="button" className={element.id === selectedElementId ? 'is-active' : ''} onClick={() => setSelectedElementId(element.id)}>
-                  <span className={`layer-icon layer-icon--${element.type}`}>{element.type === 'text' ? 'T' : element.type === 'image' ? '▧' : element.type === 'chart' ? '▥' : '◇'}</span>
-                  <span>{elementLabel(element)}</span><i>{element.visible ? '●' : '○'}</i>
+                  <span className={`layer-icon layer-icon--${element.type}`}>
+                    {element.type === 'text' ? <Type aria-hidden="true" /> : element.type === 'image' ? <ImageIcon aria-hidden="true" /> : element.type === 'chart' ? <ChartColumn aria-hidden="true" /> : element.type === 'table' ? <Table2 aria-hidden="true" /> : <Shapes aria-hidden="true" />}
+                  </span>
+                  <span>{elementLabel(element)}</span><i>{element.visible ? <Eye aria-label="Visible" /> : <EyeOff aria-label="Hidden" />}</i>
                 </button>
               ))}
             </div>
