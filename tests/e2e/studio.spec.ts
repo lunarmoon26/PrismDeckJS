@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { strToU8, zipSync } from 'fflate';
 
@@ -49,6 +50,7 @@ function semanticDeckArchive(): Buffer {
 }
 
 test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
+  test.setTimeout(60_000);
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
@@ -242,6 +244,38 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   await expect(page.locator('.slide-card')).toHaveCount(16);
   await expect(page.getByLabel('Demo deck theme')).toBeDisabled();
   expect(consoleErrors).toEqual([]);
+});
+
+test('loads exported HTML with the built browser runtime', async ({ context, page }, testInfo) => {
+  test.setTimeout(60_000);
+  const viewerErrors: string[] = [];
+  await page.goto('/');
+  await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export HTML' }).click();
+  const viewerPath = testInfo.outputPath('viewer.html');
+  await (await downloadPromise).saveAs(viewerPath);
+
+  const runtime = await readFile('packages/prismdeck/dist/prism-deck.min.js');
+  const viewer = await context.newPage();
+  viewer.on('console', (message) => {
+    if (message.type() === 'error') viewerErrors.push(message.text());
+  });
+  viewer.on('pageerror', (error) => viewerErrors.push(error.message));
+  await viewer.route('https://cdn.jsdelivr.net/npm/prismdeckjs@*/dist/prism-deck.min.js', (route) => route.fulfill({
+    body: runtime,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'text/javascript; charset=utf-8',
+    },
+  }));
+  await viewer.goto(pathToFileURL(viewerPath).href);
+  await expect(viewer.locator('.status')).toBeHidden({ timeout: 30_000 });
+  await expect(viewer.locator('.count')).toHaveText('1 / 15');
+  await expect(viewer.getByLabel('Interactive 3D presentation canvas')).toBeVisible();
+  expect(viewerErrors).toEqual([]);
+  await viewer.close();
 });
 
 test('renders semantic chart and table surfaces without browser errors', async ({ page }) => {

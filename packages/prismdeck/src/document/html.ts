@@ -80,7 +80,7 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
     :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#151311;color:#f7f2ec}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{display:grid;grid-template-rows:1fr auto}
     main{position:relative;min-height:0;background:radial-gradient(circle at 50% 40%,#36312c,#161412 72%)}
-    canvas{display:block;position:absolute;inset:0;width:100%;height:100%}canvas.overlay{pointer-events:none}.status{position:absolute;inset:0;display:grid;place-items:center;padding:2rem;text-align:center;background:#151311}
+    canvas{display:block;position:absolute;inset:0;width:100%;height:100%}canvas.overlay{pointer-events:none}.status{position:absolute;inset:0;display:grid;place-items:center;padding:2rem;text-align:center;background:#151311}.status[hidden]{display:none}
     .sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
     nav{height:58px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 18px;border-top:1px solid #39342f;background:#211e1b}
     .title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.controls{display:flex;align-items:center;gap:10px}
