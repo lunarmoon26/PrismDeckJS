@@ -17,6 +17,7 @@ Browser-native spatial presentation SDK used by
 - PowerPoint and ODP template layouts that can instantiate slides.
 - Single-file editable HTML export with CDN-hosted Three.js playback.
 - Active-slide screen-reader tables for presentation tables and chart data.
+- Shared Agent Skill plus OpenCode and DeepSeek/Cordis adapter entrypoints.
 
 ## Basic use
 
@@ -48,6 +49,14 @@ HTML file. `loadPrismDeckHtml(bytes)` recovers the same editable `LoadedDeck`
 without executing HTML-authored scripts. The default runtime URL is pinned to the
 installed `prismdeckjs` package version and can be overridden with an absolute
 HTTPS URL.
+
+## Agent entrypoints
+
+OpenCode discovers the server plugin from the package's `./server` export.
+DeepSeek Harness loads `prismdeckjs/deepseek` through the bundled
+`cordis.patch.yml`. Claude Code, Codex, and Antigravity consume the shared skill
+under `skills/prismdeckjs/`. Every adapter delegates to that skill's scripts,
+which call the same validated HTML exporter as the SDK.
 
 See the [repository](https://github.com/lunarmoon26/PrismDeckJS) for the schema,
 element contract, PPTX/ODP compatibility matrix, Studio, and development

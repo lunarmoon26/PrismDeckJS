@@ -21,12 +21,14 @@ CI (Node 24) runs `npm run check` plus e2e with chromium. There is **no lint/for
 - Public API is re-exported through `packages/prismdeck/src/index.ts`; schema at `packages/prismdeck/schema/prismdeck.schema.json`.
 - Core build emits both ESM/type declarations and CDN entry `dist/prism-deck.min.js`; optional Rapier stays in a separate lazy chunk.
 
-## DeepSeek Harness deck generation
+## Agent adapters and deck generation
 
-- Harness needs no repo plugin/profile: run `dsh web` or `dsh --profile headless "<prompt>"` from the root; it loads this file.
+- Load `.agents/skills/develop-prismdeckjs/` before changing shared skills, harness manifests, package exports, or runtime adapters.
+- `packages/prismdeck/skills/prismdeckjs/` owns the portable deck-generation workflow and its Node/Python script contract. OpenCode and Cordis code in `packages/prismdeck/src/opencode.ts` and `src/deepseek.ts` stays thin and delegates to those scripts.
+- The repository is a Harness Alchemist monorepo adaptation: root marketplace manifests point at `packages/prismdeck`, while the published `prismdeckjs` package keeps the SDK at `.` and exposes host adapters at `./server`, `./opencode`, and `./deepseek`.
 - For deck-generation prompts, turn the narrative into a multi-slide `DeckDocument`, starting from `examples/deepseek-harness/deck.json` and checking exact shapes against the schema. Write source JSON and HTML under ignored `generated/`.
 - Run `npm run export:html -- generated/<name>.json generated/<name>.html`; do not hand-author the HTML wrapper. The command validates the document and embeds it for Studio re-import.
-- Mention the exact generated `.html` path in the final response so Harness exposes it as a produced file.
+- Mention the exact generated `.html` path in the final response so the harness exposes it as a produced file.
 
 ## Testing gotchas
 

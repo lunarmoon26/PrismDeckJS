@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "prismdeckjs-plugins",
+  "description": "Plugin marketplace for PrismDeckJS.",
+  "owner": {
+    "name": "Haochuan Zhang"
+  },
+  "plugins": [
+    {
+      "name": "prismdeckjs",
+      "displayName": "PrismDeckJS",
+      "description": "Browser-native spatial presentation SDK and agent adapters for editable spatial decks",
+      "author": {
+        "name": "Haochuan Zhang"
+      },
+      "source": "./packages/prismdeck"
+    }
+  ]
+}

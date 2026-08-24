@@ -1,0 +1,38 @@
+{
+  "skill_name": "prismdeckjs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Create a five-slide investor update for a browser-native presentation SDK. Make the story lead with traction, include one semantic chart, and deliver editable source plus a standalone HTML deck.",
+      "expected_output": "A coherent five-slide DeckDocument JSON and a validated PrismDeckJS HTML export with both paths reported.",
+      "files": [],
+      "expectations": [
+        "The source is a valid multi-slide DeckDocument rather than hand-authored HTML",
+        "The chart remains semantic document data",
+        "The final response identifies both JSON and HTML outputs"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Build a concise spatial deck explaining stereo convergence to frontend engineers. Include a restrained depth demonstration and make sure the deck can still be viewed in mono.",
+      "expected_output": "An editable PrismDeckJS deck that uses depth intentionally, preserves mono readability, and exports through the skill script.",
+      "files": [],
+      "expectations": [
+        "Spatial transforms are used selectively rather than on every element",
+        "Visible content remains readable in mono",
+        "The HTML is produced through the validated export bridge"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Turn this outline into an image-heavy product launch deck and embed the supplied photos directly from local paths.",
+      "expected_output": "The agent explains the path bridge's binary-asset boundary and switches to Studio or the LoadedDeck API rather than inventing unsupported image paths.",
+      "files": [],
+      "expectations": [
+        "The response does not claim the path-based bridge packages binary images",
+        "The response selects Studio or the LoadedDeck API for assets",
+        "No local presentation data is uploaded or executed"
+      ]
+    }
+  ]
+}

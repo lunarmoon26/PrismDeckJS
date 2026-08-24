@@ -1,0 +1,4 @@
+{
+  "pluginRoot": "packages/prismdeck",
+  "opencodeExport": "./server"
+}

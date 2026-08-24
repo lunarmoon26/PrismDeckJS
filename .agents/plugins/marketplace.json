@@ -1,0 +1,20 @@
+{
+  "name": "prismdeckjs-plugins",
+  "interface": {
+    "displayName": "PrismDeckJS"
+  },
+  "plugins": [
+    {
+      "name": "prismdeckjs",
+      "source": {
+        "source": "local",
+        "path": "./packages/prismdeck"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

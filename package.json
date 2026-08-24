@@ -13,10 +13,12 @@
     "build:core": "npm run build --workspace=prismdeckjs",
     "build": "npm run build:core && npm run build --workspace=@prismdeck/studio",
     "test": "npm run test --workspace=prismdeckjs",
+    "test:agents": "npm run build:core --silent && node --test tests/agent-adapters.test.mjs",
     "test:e2e": "npm run build:core --silent && playwright test",
     "test:watch": "npm run test:watch --workspace=prismdeckjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "check": "npm run typecheck && npm test && npm run build"
+    "sync:agents": "npm run sync:agents --workspace=prismdeckjs",
+    "check": "npm run typecheck && npm test && npm run build && npm run test:agents"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

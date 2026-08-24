@@ -38,10 +38,10 @@ and document validation. Arbitrary HTML files are rejected.
 - `npm run export:html -- input.json output.html` validates a standalone
   `DeckDocument` JSON file and writes the same HTML format with no binary assets.
 
-## DeepSeek Harness flow
+## Agent harness flow
 
-DeepSeek Harness treats the repository root as a normal workspace and loads
-`AGENTS.md`; no Harness-specific profile or plugin manifest is required. For a
+The shared `prismdeckjs` Agent Skill gives Claude Code, Codex, OpenCode,
+Antigravity, and DeepSeek Harness the same deck-generation procedure. For a
 deck-generation prompt, the agent:
 
 1. turns the requested narrative into a concise multi-slide structure;
@@ -54,6 +54,8 @@ deck-generation prompt, the agent:
 `examples/deepseek-harness/deck.json` is the copyable two-slide starting point;
 `apps/studio/src/demo.ts` shows additional element shapes and spatial transforms.
 Generated artifacts belong under `generated/`, which remains untracked.
+Installed adapters invoke the equivalent skill-owned `export_html` script
+contract documented in [`agent-adapters.md`](agent-adapters.md).
 
 ## Non-goals
 

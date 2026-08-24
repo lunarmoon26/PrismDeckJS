@@ -24,6 +24,7 @@ only.
 | Stereo output | Project the same scene through calibrated left and right off-axis cameras. |
 | Rapier session | Optionally step one fixed-timestep world and synchronize active-slide meshes. |
 | Studio | Edit normalized content and presentation metadata without mutating source OOXML or ODF. |
+| Agent adapters | Expose one shared deck-authoring skill through harness manifests, an OpenCode server module, and a DeepSeek/Cordis service without duplicating document or export logic. |
 
 ## Critical runtime flow
 
@@ -39,6 +40,11 @@ source bytes
 HTML import is a wrapper around the same archive boundary: only the exact inert
 PrismDeck data marker is decoded. Scripts and markup from imported HTML are never
 executed.
+
+Agent-generated decks follow the same boundary. A shared skill writes a
+`DeckDocument`; its script bridge invokes the packaged HTML exporter; OpenCode
+and Cordis adapters only translate host arguments to that script contract. The
+SDK remains the package root export, while agent hosts use explicit subpaths.
 
 Physics advances once per accepted frame before either eye is rendered. Stereo
 never duplicates document state or simulation.
@@ -80,6 +86,9 @@ center-relative perspective scaling.
 - Loading a new deck or slide deterministically disposes owned GPU, media, worker,
   and physics resources.
 - Exported viewers provide active-slide text, chart data, and table structure to assistive technology independently from visual canvases.
+- Harness adapters contain no document generation, validation, rendering, or archive logic; they delegate to the shared skill and SDK export boundary.
 
 Significant chart and table rendering decisions are recorded in
 [`adr/0003-semantic-chart-table-rendering.md`](adr/0003-semantic-chart-table-rendering.md).
+The monorepo agent-adapter boundary is recorded in
+[`adr/0004-agent-adapter-boundary.md`](adr/0004-agent-adapter-boundary.md).
