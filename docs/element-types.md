@@ -36,9 +36,10 @@ model before validation; newly saved packages always use `0.2.0`.
 ## Planar and extruded elements
 
 `thickness` is optional. Omitted or zero thickness renders as a flat, unlit
-double-sided plane; a positive value opts into an extruded, lit box. Position,
-rotation, scale, opacity, picking, stereo projection, and render order apply to
-both forms.
+double-sided plane; a positive value opts into an extruded, lit box. An extruded
+ellipse whose physics collider is `ball` renders as a lit sphere sized to the
+same scaled minimum face dimension as its Rapier collider. Position, rotation,
+scale, opacity, picking, stereo projection, and render order apply to both forms.
 
 When the host supplies an overlay canvas, a slide uses the Canvas2D presentation
 surface only when every visible element is flat at `z: 0`, has zero X/Y rotation,

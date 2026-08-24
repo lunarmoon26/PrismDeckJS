@@ -82,15 +82,16 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
     main{position:relative;min-height:0;background:radial-gradient(circle at 50% 40%,#36312c,#161412 72%)}
     canvas{display:block;position:absolute;inset:0;width:100%;height:100%}canvas.overlay{pointer-events:none}.status{position:absolute;inset:0;display:grid;place-items:center;padding:2rem;text-align:center;background:#151311}.status[hidden]{display:none}
     .sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
-    nav{height:58px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 18px;border-top:1px solid #39342f;background:#211e1b}
+    nav{min-height:58px;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(52px,1fr);align-items:center;padding:8px 18px;border-top:1px solid #39342f;background:#211e1b}
     .title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.controls{display:flex;align-items:center;gap:10px}
     button{width:34px;height:34px;border:1px solid #514a44;border-radius:50%;background:#2b2723;color:#f7f2ec;font:700 16px inherit;cursor:pointer}
-    button:disabled{opacity:.35;cursor:not-allowed}.count{justify-self:end;color:#aaa29c;font:12px ui-monospace,SFMono-Regular,monospace}
+    button:disabled{opacity:.35;cursor:not-allowed}.output-mode{height:34px;border:1px solid #514a44;border-radius:4px;background:#2b2723;color:#f7f2ec;padding:0 8px;font:600 11px ui-sans-serif,system-ui,sans-serif}.count{justify-self:end;color:#aaa29c;font:12px ui-monospace,SFMono-Regular,monospace}
+    @media(max-width:640px){nav{grid-template-columns:1fr auto;padding-inline:10px}.title{display:none}.controls{justify-self:start;gap:6px}.output-mode{max-width:112px}.count{padding-left:8px}}
   </style>
 </head>
 <body>
   <main><canvas class="webgl" aria-label="Interactive 3D presentation canvas" aria-describedby="slide-semantics"></canvas><canvas class="overlay" aria-hidden="true"></canvas><section class="sr-only" id="slide-semantics" aria-live="polite" aria-label="Current slide content"></section><div class="status">Loading presentation…</div></main>
-  <nav aria-label="Presentation controls"><div class="title"></div><div class="controls"><button type="button" data-action="previous" aria-label="Previous slide">←</button><button type="button" data-action="next" aria-label="Next slide">→</button></div><div class="count"></div></nav>
+  <nav aria-label="Presentation controls"><div class="title"></div><div class="controls"><button type="button" data-action="previous" aria-label="Previous slide">←</button><button type="button" data-action="next" aria-label="Next slide">→</button><select class="output-mode" aria-label="Output mode" aria-keyshortcuts="1 2 3" title="Shortcuts: 1 Mono, 2 Full SBS, 3 Half SBS"><option value="mono">Mono · 1</option><option value="full-sbs">Full SBS · 2</option><option value="half-sbs">Half SBS · 3</option></select></div><div class="count"></div></nav>
   ${DATA_OPEN}${archiveBase64}${DATA_CLOSE}
   <script type="module">
     const status = document.querySelector('.status');
@@ -103,9 +104,11 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
       const deck = await PrismDeck.loadPrismDeck(bytes);
       const canvas = document.querySelector('canvas.webgl');
       const overlayCanvas = document.querySelector('canvas.overlay');
-      const player = await PrismDeck.DeckPlayer.create(canvas, deck, { autoStart: true, renderer: { overlayCanvas } });
+      const usesPhysics = deck.document.slides.some((slide) => slide.elements.some((element) => element.physics));
+      const player = await PrismDeck.DeckPlayer.create(canvas, deck, { autoStart: true, physics: usesPhysics, renderer: { overlayCanvas } });
       const previous = document.querySelector('[data-action="previous"]');
       const next = document.querySelector('[data-action="next"]');
+      const outputMode = document.querySelector('.output-mode');
       const title = document.querySelector('.title');
       const count = document.querySelector('.count');
       const semantics = document.getElementById('slide-semantics');
@@ -244,9 +247,18 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
       };
       previous.addEventListener('click', () => player.session.previous());
       next.addEventListener('click', () => player.session.next());
+      const setOutputMode = (mode) => {
+        player.renderer.setOutputMode(mode);
+        outputMode.value = mode;
+      };
+      outputMode.addEventListener('change', () => setOutputMode(outputMode.value));
       player.session.addEventListener('change', sync);
       window.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowLeft' || event.key === 'PageUp') player.session.previous();
+        const mode = { '1': 'mono', '2': 'full-sbs', '3': 'half-sbs' }[event.key];
+        if (mode) {
+          event.preventDefault();
+          setOutputMode(mode);
+        } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') player.session.previous();
         else if (event.key === 'ArrowRight' || event.key === 'PageDown') player.session.next();
       });
       const resize = () => player.renderer.resize(canvas.clientWidth, canvas.clientHeight, false);

@@ -11,10 +11,15 @@ travel together and can be imported back into PrismDeck Studio for editing.
 The viewer imports the version-pinned `prism-deck.min.js` ES module from
 jsDelivr, creates one `DeckPlayer`, and provides previous/next controls plus
 keyboard navigation. Three.js, the Canvas2D presentation layer, and the
-non-physics PrismDeck runtime load from that module. Viewing requires network
-access to the CDN; presentation data and assets do not leave the file.
+PrismDeck runtime load from that module. Decks that declare physics elements
+also lazy-load the packaged Rapier chunk. Viewing requires network access to the
+CDN; presentation data and assets do not leave the file.
 The browser bundle replaces dependency development guards at build time and
 does not require Node.js globals such as `process`.
+
+The viewer exposes an output-mode selector beside its previous/next controls.
+Keyboard shortcuts `1`, `2`, and `3` select Mono, Full SBS, and Half SBS
+respectively; arrow keys and Page Up/Page Down continue to navigate slides.
 
 The viewer synchronizes an off-screen semantic section with the active slide.
 Text remains text, presentation tables become native HTML tables with header and
@@ -66,7 +71,7 @@ Generated artifacts belong under `generated/`, which remains untracked.
 - The npm package contains `dist/prism-deck.min.js` and identifies it as its
   jsDelivr/unpkg browser entry.
 - Browser tests open a generated HTML export against the built browser entry and
-  require the presentation canvas and first-slide navigation state to load with
-  no console or page errors.
+  require the presentation canvas, output modes, optional physics, and
+  first-slide navigation state to load with no console or page errors.
 - A published GitHub release validates, tests, builds, packs, and publishes the
   `prismdeckjs` workspace package with npm provenance.

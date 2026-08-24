@@ -3,8 +3,10 @@ import {
   DEFAULT_TEXT_STYLE,
   DEFAULT_TRANSFORM,
   elementTextureSize,
+  elementWorldBallRadius,
   elementWorldTransform,
   type ChartElement,
+  type ShapeElement,
   type TextElement,
 } from '../src/index';
 import { chartToEChartsOption, renderChartSvg } from '../src/render/chart';
@@ -78,6 +80,27 @@ describe('element rendering dimensions', () => {
 
     expect(texture.width / texture.height).toBeCloseTo(physicalAspect, 1);
     expect(Math.max(texture.width, texture.height)).toBeLessThanOrEqual(2048);
+  });
+
+  test('uses the same scaled minimum face dimension for a physics ball', () => {
+    const ball: ShapeElement = {
+      id: 'ball',
+      type: 'shape',
+      name: 'Ball',
+      frame: { x: 0.1, y: 0.1, width: 0.2, height: 0.1 },
+      transform: { ...DEFAULT_TRANSFORM, scaleX: 0.5, scaleY: 2 },
+      opacity: 1,
+      visible: true,
+      renderOrder: 0,
+      thickness: 0.1,
+      shape: 'ellipse',
+      fill: '#00FFFF',
+      stroke: '#FFFFFF',
+      strokeWidth: 1,
+      physics: { body: 'dynamic', shape: 'ball', density: 1, restitution: 0.8, friction: 0.2 },
+    };
+
+    expect(elementWorldBallRadius(ball, { width: 1600, height: 900 })).toBeCloseTo(0.8889, 4);
   });
 });
 
