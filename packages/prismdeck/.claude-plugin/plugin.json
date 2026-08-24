@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "prismdeckjs",
+  "displayName": "PrismDeckJS",
+  "version": "0.2.1",
+  "description": "Browser-native spatial presentation SDK and agent adapters for editable spatial decks",
+  "author": {
+    "name": "Haochuan Zhang"
+  },
+  "homepage": "https://lunarmoon26.github.io/PrismDeckJS/",
+  "repository": "https://github.com/lunarmoon26/PrismDeckJS",
+  "license": "MIT",
+  "skills": "./skills/"
+}

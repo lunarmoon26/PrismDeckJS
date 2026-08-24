@@ -61,6 +61,15 @@ version-matched `prism-deck.min.js` browser module from jsDelivr. Studio can
 re-import the HTML for editing. Presentation data stays in the file; viewing
 requires network access to the CDN. See [`docs/html-export.md`](docs/html-export.md).
 
+## Coding-agent adapters
+
+PrismDeckJS packages one shared deck-authoring skill for Claude Code,
+Codex/ChatGPT, OpenCode, Google Antigravity, and DeepSeek Harness. The adapters
+delegate to the same validated HTML export path as the SDK and command line;
+they do not maintain a second presentation model. See
+[`docs/agent-adapters.md`](docs/agent-adapters.md) for installation and the tool
+contract.
+
 The browser module is also available directly:
 
 ```js
@@ -91,10 +100,6 @@ npm run test:e2e
 npm run export:html -- examples/deepseek-harness/deck.json generated/deck.html
 ```
 
-The Dickinson College sample files are optional local compatibility inputs and
-are not redistributed by this repository. See
-[`docs/import-compatibility.md`](docs/import-compatibility.md).
-
 Studio opens with a fifteen-slide PrismDeck feature tour that exercises all nine
 layouts, the original CyberHUD Edge palette, and six Office-compatible presentation palettes. Studio chrome remains
 neutral, and theme selection never changes imported deck colors. See
@@ -114,7 +119,7 @@ repository requires an Actions secret named `NPM_TOKEN` with publish access to
 ## Repository map
 
 - `packages/prismdeck`: document contract, importers, runtime, renderer, stereo,
-  and optional physics.
+  optional physics, and thin coding-agent adapters.
 - `apps/studio`: responsive React/Vite editor and presenter.
 - `docs`: architecture, compatibility policy, and decisions.
 
