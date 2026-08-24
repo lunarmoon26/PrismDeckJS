@@ -2,7 +2,7 @@
 
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, test } from 'vitest';
-import { importPresentation, validateDeckDocument } from '../src/index';
+import { elementWorldTransform, importPresentation, validateDeckDocument } from '../src/index';
 
 const contentTypes = `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -53,8 +53,101 @@ const slide = `<?xml version="1.0" encoding="UTF-8"?>
         <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Grouped</a:t></a:r></a:p></p:txBody>
       </p:sp>
     </p:grpSp>
+    <p:sp>
+      <p:nvSpPr><p:cNvPr id="6" name="Flat text"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+      <p:spPr><a:xfrm><a:off x="914400" y="5486400"/><a:ext cx="2743200" cy="457200"/></a:xfrm></p:spPr>
+      <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Planar text</a:t></a:r></a:p></p:txBody>
+    </p:sp>
   </p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:sld>`;
+
+const semanticSlide = `<?xml version="1.0" encoding="UTF-8"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+    <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+    <p:graphicFrame>
+      <p:nvGraphicFramePr><p:cNvPr id="2" name="Merged quarterly table"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
+      <p:xfrm><a:off x="457200" y="457200"/><a:ext cx="5486400" cy="1371600"/></p:xfrm>
+      <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl>
+        <a:tblPr firstRow="1" bandRow="1"/>
+        <a:tblGrid><a:gridCol w="1828800"/><a:gridCol w="2743200"/><a:gridCol w="914400"/></a:tblGrid>
+        <a:tr h="457200">
+          <a:tc gridSpan="2"><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Region / Quarter</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+          <a:tc hMerge="1"><a:txBody><a:bodyPr/><a:lstStyle/><a:p/></a:txBody><a:tcPr/></a:tc>
+          <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Revenue</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+        </a:tr>
+        <a:tr h="365760">
+          <a:tc rowSpan="2"><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>North</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+          <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Q1</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+          <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>42</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+        </a:tr>
+        <a:tr h="548640">
+          <a:tc vMerge="1"><a:txBody><a:bodyPr/><a:lstStyle/><a:p/></a:txBody><a:tcPr/></a:tc>
+          <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Q2</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+          <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>57</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+        </a:tr>
+      </a:tbl></a:graphicData></a:graphic>
+    </p:graphicFrame>
+    <p:graphicFrame>
+      <p:nvGraphicFramePr><p:cNvPr id="3" name="Revenue and margin chart"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
+      <p:xfrm><a:off x="457200" y="2286000"/><a:ext cx="8229600" cy="4114800"/></p:xfrm>
+      <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart r:id="rId2"/></a:graphicData></a:graphic>
+    </p:graphicFrame>
+  </p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sld>`;
+
+const combinationChart = `<?xml version="1.0" encoding="UTF-8"?>
+<c:chartSpace xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <c:chart>
+    <c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Revenue and margin</a:t></a:r></a:p></c:rich></c:tx><c:layout/><c:overlay val="0"/></c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:barDir val="col"/><c:grouping val="stacked"/><c:varyColors val="0"/>
+        <c:ser>
+          <c:idx val="0"/><c:order val="0"/>
+          <c:tx><c:strRef><c:f>Data!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Hardware</c:v></c:pt></c:strCache></c:strRef></c:tx>
+          <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f><c:strCache><c:ptCount val="3"/><c:pt idx="0"><c:v>Q1</c:v></c:pt><c:pt idx="1"><c:v>Q2</c:v></c:pt><c:pt idx="2"><c:v>Q3</c:v></c:pt></c:strCache></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f><c:numCache><c:formatCode>$#,##0</c:formatCode><c:ptCount val="3"/><c:pt idx="0"><c:v>30</c:v></c:pt><c:pt idx="1"><c:v>42</c:v></c:pt><c:pt idx="2"><c:v>55</c:v></c:pt></c:numCache></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/><c:order val="1"/>
+          <c:tx><c:strRef><c:f>Data!$C$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Services</c:v></c:pt></c:strCache></c:strRef></c:tx>
+          <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f><c:strCache><c:ptCount val="3"/><c:pt idx="0"><c:v>Q1</c:v></c:pt><c:pt idx="1"><c:v>Q2</c:v></c:pt><c:pt idx="2"><c:v>Q3</c:v></c:pt></c:strCache></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Data!$C$2:$C$4</c:f><c:numCache><c:formatCode>$#,##0</c:formatCode><c:ptCount val="3"/><c:pt idx="0"><c:v>12</c:v></c:pt><c:pt idx="1"><c:v>18</c:v></c:pt><c:pt idx="2"><c:v>21</c:v></c:pt></c:numCache></c:numRef></c:val>
+        </c:ser>
+        <c:overlap val="100"/><c:axId val="100"/><c:axId val="200"/>
+      </c:barChart>
+      <c:lineChart>
+        <c:grouping val="standard"/><c:varyColors val="0"/>
+        <c:ser>
+          <c:idx val="2"/><c:order val="2"/>
+          <c:tx><c:strRef><c:f>Data!$D$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Margin</c:v></c:pt></c:strCache></c:strRef></c:tx>
+          <c:marker><c:symbol val="circle"/><c:size val="6"/></c:marker>
+          <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f><c:strCache><c:ptCount val="3"/><c:pt idx="0"><c:v>Q1</c:v></c:pt><c:pt idx="1"><c:v>Q2</c:v></c:pt><c:pt idx="2"><c:v>Q3</c:v></c:pt></c:strCache></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Data!$D$2:$D$4</c:f><c:numCache><c:formatCode>0%</c:formatCode><c:ptCount val="3"/><c:pt idx="0"><c:v>0.25</c:v></c:pt><c:pt idx="2"><c:v>0.4</c:v></c:pt></c:numCache></c:numRef></c:val>
+          <c:smooth val="0"/>
+        </c:ser>
+        <c:axId val="100"/><c:axId val="300"/>
+      </c:lineChart>
+      <c:catAx>
+        <c:axId val="100"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/>
+        <c:numFmt formatCode="General" sourceLinked="1"/><c:tickLblPos val="nextTo"/><c:crossAx val="200"/><c:crosses val="autoZero"/>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="200"/><c:scaling><c:orientation val="minMax"/><c:max val="100"/><c:min val="0"/></c:scaling><c:delete val="0"/><c:axPos val="l"/>
+        <c:numFmt formatCode="$#,##0" sourceLinked="0"/><c:tickLblPos val="nextTo"/><c:crossAx val="100"/><c:crosses val="autoZero"/><c:crossBetween val="between"/>
+      </c:valAx>
+      <c:valAx>
+        <c:axId val="300"/><c:scaling><c:orientation val="minMax"/><c:max val="1"/><c:min val="0"/></c:scaling><c:delete val="0"/><c:axPos val="r"/>
+        <c:numFmt formatCode="0%" sourceLinked="0"/><c:tickLblPos val="nextTo"/><c:crossAx val="100"/><c:crosses val="max"/><c:crossBetween val="between"/>
+      </c:valAx>
+    </c:plotArea>
+    <c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>
+    <c:plotVisOnly val="1"/><c:dispBlanksAs val="span"/><c:showDLblsOverMax val="0"/>
+  </c:chart>
+</c:chartSpace>`;
 
 const layout = `<?xml version="1.0" encoding="UTF-8"?>
 <p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="titleOnly" preserve="1">
@@ -81,9 +174,21 @@ const theme = `<?xml version="1.0" encoding="UTF-8"?>
   </a:themeElements>
 </a:theme>`;
 
-function fixture(includeSlide: boolean): ArrayBuffer {
+function fixture(
+  includeSlide: boolean,
+  variant: 'basic' | 'semantic' = 'basic',
+  chartXml = combinationChart,
+  slideXml = semanticSlide,
+): ArrayBuffer {
   const files: Record<string, Uint8Array> = {
-    '[Content_Types].xml': strToU8(contentTypes),
+    '[Content_Types].xml': strToU8(
+      variant === 'semantic'
+        ? contentTypes.replace(
+            '</Types>',
+            '  <Override PartName="/ppt/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>\n</Types>',
+          )
+        : contentTypes,
+    ),
     'ppt/presentation.xml': strToU8(presentation(includeSlide)),
     'ppt/_rels/presentation.xml.rels': strToU8(presentationRelationships(includeSlide)),
     'ppt/slideLayouts/slideLayout1.xml': strToU8(layout),
@@ -93,9 +198,14 @@ function fixture(includeSlide: boolean): ArrayBuffer {
     'ppt/theme/theme1.xml': strToU8(theme),
   };
   if (includeSlide) {
-    files['ppt/slides/slide1.xml'] = strToU8(slide);
-    files['ppt/slides/_rels/slide1.xml.rels'] = strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/pixel.png"/></Relationships>`);
-    files['ppt/media/pixel.png'] = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    files['ppt/slides/slide1.xml'] = strToU8(variant === 'semantic' ? slideXml : slide);
+    files['ppt/slides/_rels/slide1.xml.rels'] = strToU8(
+      variant === 'semantic'
+        ? `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/></Relationships>`
+        : `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/pixel.png"/></Relationships>`,
+    );
+    if (variant === 'semantic') files['ppt/charts/chart1.xml'] = strToU8(chartXml);
+    else files['ppt/media/pixel.png'] = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
   }
   const bytes = zipSync(files);
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -110,11 +220,17 @@ describe('PPTX importer', () => {
     expect(result.document.size).toEqual({ width: 960, height: 720 });
     expect(result.document.layouts).toHaveLength(1);
     expect(result.document.slides).toHaveLength(1);
-    expect(result.document.slides[0]?.elements.map((element) => element.type)).toEqual(['shape', 'image', 'shape']);
+    expect(result.document.slides[0]?.elements.map((element) => element.type)).toEqual(['shape', 'image', 'shape', 'text']);
+    expect(result.document.slides[0]?.elements.map((element) => element.transform.z)).toEqual([0, 0, 0, 0]);
+    expect(result.document.slides[0]?.elements.map((element) => element.renderOrder)).toEqual([1, 2, 3, 4]);
     expect(result.document.slides[0]?.elements[2]).toMatchObject({
       name: 'Grouped shape',
       frame: { x: 0.5, y: expect.closeTo(0.5333, 3), width: 0.2, height: expect.closeTo(0.1333, 3) },
     });
+    const importedText = result.document.slides[0]?.elements.find((element) => element.type === 'text');
+    const importedImage = result.document.slides[0]?.elements.find((element) => element.type === 'image');
+    expect(importedText && elementWorldTransform(importedText, result.document.size).size.depth).toBe(0);
+    expect(importedImage && elementWorldTransform(importedImage, result.document.size).size.depth).toBe(0);
     expect(result.assets.size).toBe(1);
   });
 
@@ -125,5 +241,110 @@ describe('PPTX importer', () => {
     expect(result.document.kind).toBe('template');
     expect(result.document.slides).toHaveLength(0);
     expect(result.document.layouts).toHaveLength(1);
+  });
+
+  test('maps semantic DrawingML tables and combination charts', async () => {
+    const result = await importPresentation(fixture(true, 'semantic'));
+    validateDeckDocument(result.document);
+
+    const table = result.document.slides[0]?.elements.find((element) => element.type === 'table');
+    const chart = result.document.slides[0]?.elements.find((element) => element.type === 'chart');
+    if (table?.type !== 'table' || chart?.type !== 'chart') throw new Error('Expected a semantic table and chart');
+
+    expect(table.columns).toEqual([192, 288, 96]);
+    expect(table.rows).toMatchObject([
+      {
+        height: 48,
+        cells: [
+          { column: 0, text: 'Region / Quarter', columnSpan: 2, header: true },
+          { column: 2, text: 'Revenue', header: true },
+        ],
+      },
+      {
+        height: expect.closeTo(38.4, 10),
+        cells: [
+          { column: 0, text: 'North', rowSpan: 2 },
+          { column: 1, text: 'Q1' },
+          { column: 2, text: '42' },
+        ],
+      },
+      {
+        height: expect.closeTo(57.6, 10),
+        cells: [
+          { column: 1, text: 'Q2' },
+          { column: 2, text: '57' },
+        ],
+      },
+    ]);
+
+    expect(chart.plots).toMatchObject([
+      {
+        type: 'bar',
+        grouping: 'stacked',
+        direction: 'column',
+        axisIds: ['100', '200'],
+        series: [
+          {
+            name: 'Hardware',
+            points: [
+              { label: 'Q1', value: 30 },
+              { label: 'Q2', value: 42 },
+              { label: 'Q3', value: 55 },
+            ],
+          },
+          {
+            name: 'Services',
+            points: [
+              { label: 'Q1', value: 12 },
+              { label: 'Q2', value: 18 },
+              { label: 'Q3', value: 21 },
+            ],
+          },
+        ],
+      },
+      {
+        type: 'line',
+        grouping: 'standard',
+        axisIds: ['100', '300'],
+        series: [
+          {
+            name: 'Margin',
+            points: [
+              { label: 'Q1', value: 0.25 },
+              { label: 'Q2', value: null },
+              { label: 'Q3', value: 0.4 },
+            ],
+          },
+        ],
+      },
+    ]);
+    expect(chart.axes).toMatchObject([
+      { id: '100', kind: 'category', position: 'bottom', visible: true, numberFormat: 'General' },
+      { id: '200', kind: 'value', position: 'left', visible: true, numberFormat: '$#,##0', minimum: 0, maximum: 100 },
+      { id: '300', kind: 'value', position: 'right', visible: true, numberFormat: '0%', minimum: 0, maximum: 1 },
+    ]);
+    expect(chart.legend).toMatchObject({ visible: true, position: 'bottom', overlay: false });
+    expect(chart.displayBlanksAs).toBe('span');
+  });
+
+  test('bounds oversized chart cache indexes and reports truncation', async () => {
+    const oversizedChart = combinationChart.replace(
+      '<c:ptCount val="1"/><c:pt idx="0"><c:v>Hardware</c:v></c:pt>',
+      '<c:ptCount val="1000000000"/><c:pt idx="1000000000"><c:v>Hardware</c:v></c:pt>',
+    );
+    const result = await importPresentation(fixture(true, 'semantic', oversizedChart));
+
+    validateDeckDocument(result.document);
+    expect(result.report.warnings).toContainEqual(expect.objectContaining({ code: 'PPTX_CHART_DATA_TRUNCATED' }));
+  });
+
+  test('bounds oversized table spans and reports truncation', async () => {
+    const oversizedTable = semanticSlide.replace('gridSpan="2"', 'gridSpan="1000000000"');
+    const result = await importPresentation(fixture(true, 'semantic', combinationChart, oversizedTable));
+
+    validateDeckDocument(result.document);
+    const table = result.document.slides[0]?.elements.find((element) => element.type === 'table');
+    expect(table?.type === 'table' ? table.columns : []).toHaveLength(1_000);
+    expect(result.report.warnings).toContainEqual(expect.objectContaining({ code: 'PPTX_TABLE_TRUNCATED' }));
   });
 });

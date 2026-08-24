@@ -1,12 +1,13 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type UnzipFileInfo } from 'fflate';
 import {
   PRISMDECK_MIME_TYPE,
+  LEGACY_PRISMDECK_SCHEMA_VERSION,
   PRISMDECK_SCHEMA_VERSION,
   type DeckAsset,
   type DeckPackageManifest,
   type LoadedDeck,
 } from './types';
-import { validateDeckDocument } from './validate';
+import { migrateDeckDocument } from './validate';
 
 export const DEFAULT_ARCHIVE_LIMITS = Object.freeze({
   maxCompressedBytes: 128 * 1024 * 1024,
@@ -63,10 +64,10 @@ function safeAssetFileName(asset: DeckAsset): string {
 }
 
 export async function savePrismDeck(deck: LoadedDeck): Promise<Blob> {
-  validateDeckDocument(deck.document);
+  const document = migrateDeckDocument(deck.document);
 
   const files: Record<string, Uint8Array> = {
-    'deck.json': strToU8(JSON.stringify(deck.document, null, 2)),
+    'deck.json': strToU8(JSON.stringify(document, null, 2)),
   };
   const manifest: DeckPackageManifest = {
     format: 'prismdeck',
@@ -104,13 +105,15 @@ export async function loadPrismDeck(
 ): Promise<LoadedDeck> {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   const files = unzipWithLimits(bytes, limits);
-  const manifest = parseJson<DeckPackageManifest>(files, 'manifest.json');
-  if (manifest.format !== 'prismdeck' || manifest.packageVersion !== PRISMDECK_SCHEMA_VERSION) {
+  const manifest = parseJson<Omit<DeckPackageManifest, 'packageVersion'> & { packageVersion: string }>(files, 'manifest.json');
+  if (
+    manifest.format !== 'prismdeck' ||
+    (manifest.packageVersion !== PRISMDECK_SCHEMA_VERSION && manifest.packageVersion !== LEGACY_PRISMDECK_SCHEMA_VERSION)
+  ) {
     throw new Error(`Unsupported PrismDeck package version: ${String(manifest.packageVersion)}`);
   }
 
-  const document = parseJson<unknown>(files, manifest.document);
-  validateDeckDocument(document);
+  const document = migrateDeckDocument(parseJson<unknown>(files, manifest.document));
   const assets = new Map<string, DeckAsset>();
 
   for (const entry of manifest.assets) {

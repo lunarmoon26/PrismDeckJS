@@ -1,6 +1,6 @@
 {
   "name": "prismdeckjs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Browser-native spatial presentation SDK",
   "type": "module",
   "license": "MIT",
@@ -52,6 +52,7 @@
     "@aiden0z/pptx-renderer": "1.2.4",
     "@dimforge/rapier3d-compat": "0.20.0",
     "ajv": "^8.17.1",
+    "echarts": "6.1.0",
     "fflate": "^0.8.2",
     "three": "0.185.1"
   },

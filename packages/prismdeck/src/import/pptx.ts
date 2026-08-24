@@ -18,8 +18,13 @@ import {
   DEFAULT_TEXT_STYLE,
   DEFAULT_TRANSFORM,
   PRISMDECK_SCHEMA_VERSION,
+  type BorderStyle,
+  type ChartAxis,
   type ChartElement,
+  type ChartPlot,
+  type ChartPoint,
   type ChartSeries,
+  type ChartType,
   type DeckAsset,
   type DeckDocument,
   type DeckElement,
@@ -29,6 +34,8 @@ import {
   type ImportResult,
   type ImportWarning,
   type ShapeElement,
+  type TableCellStyle,
+  type TableElement,
   type TextElement,
   type TextStyle,
   type UnsupportedElement,
@@ -84,6 +91,12 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   mp4: 'video/mp4',
   webm: 'video/webm',
 };
+const MAX_PPTX_CHART_POINTS = 100_000;
+const MAX_PPTX_CHART_SERIES = 100;
+const MAX_PPTX_CHART_PLOTS = 25;
+const MAX_PPTX_TABLE_COLUMNS = 1_000;
+const MAX_PPTX_TABLE_ROWS = 10_000;
+const MAX_PPTX_TABLE_CELLS = 100_000;
 
 function stableId(prefix: string, value: string): string {
   let hash = 2166136261;
@@ -136,10 +149,10 @@ function normalizeXmlFrame(node: Element, presentation: PresentationData): Eleme
   return normalizeFrame(x, y, width, height, presentation);
 }
 
-function elementTransform(renderOrder: number, rotationZ = 0, flipH = false, flipV = false) {
+function elementTransform(rotationZ = 0, flipH = false, flipV = false) {
   return {
     ...DEFAULT_TRANSFORM,
-    z: renderOrder * 0.002,
+    z: 0,
     rotationZ,
     scaleX: flipH ? -1 : 1,
     scaleY: flipV ? -1 : 1,
@@ -230,7 +243,7 @@ function sourceBase(
     type,
     name,
     frame,
-    transform: elementTransform(renderOrder, rotation, flipH, flipV),
+    transform: elementTransform(rotation, flipH, flipV),
     opacity: 1,
     visible: true,
     renderOrder,
@@ -257,22 +270,419 @@ function relationTarget(
   return relation ? resolvePackagePath(sourcePart, relation.target) : undefined;
 }
 
-function parseCache(cache: Element | undefined): Array<string | number | null> {
+function parseCache(cache: Element | undefined, limit = MAX_PPTX_CHART_POINTS): Array<string | number | null> {
   if (!cache) return [];
-  const count = Number(firstDescendant(cache, 'ptCount')?.getAttribute('val') ?? 0);
+  const boundedLimit = Math.max(0, Math.min(MAX_PPTX_CHART_POINTS, Math.floor(limit)));
+  const declaredCount = Number(firstDescendant(cache, 'ptCount')?.getAttribute('val') ?? 0);
+  const count = Number.isFinite(declaredCount)
+    ? Math.min(boundedLimit, Math.max(0, Math.floor(declaredCount)))
+    : 0;
   const points = new Map<number, string>();
+  let maximumIndex = -1;
   for (const point of descendants(cache, 'pt')) {
     const index = Number(point.getAttribute('idx') ?? points.size);
+    if (!Number.isInteger(index) || index < 0 || index >= boundedLimit) continue;
     const value = firstDescendant(point, 'v')?.textContent ?? '';
     points.set(index, value);
+    maximumIndex = Math.max(maximumIndex, index);
   }
-  const length = Math.max(count, ...Array.from(points.keys(), (index) => index + 1), 0);
+  const length = Math.min(boundedLimit, Math.max(count, maximumIndex + 1, 0));
   return Array.from({ length }, (_, index) => points.get(index) ?? null);
 }
 
 function childCache(node: Element | undefined): Element | undefined {
   if (!node) return undefined;
   return firstDescendant(node, 'strCache') ?? firstDescendant(node, 'numCache') ?? firstDescendant(node, 'strLit') ?? firstDescendant(node, 'numLit');
+}
+
+type PptxTheme = PresentationData['themes'] extends Map<string, infer Theme> ? Theme : never;
+
+function themeForSourcePart(context: PptxContext, sourcePart: string): PptxTheme | undefined {
+  const slideIndex = context.presentation.slides.findIndex((slide) => slide.slidePath === sourcePart);
+  const layoutPath = slideIndex >= 0 ? context.presentation.slideToLayout.get(slideIndex) : undefined;
+  return themeForLayout(context.presentation, layoutPath) ?? context.presentation.themes.values().next().value;
+}
+
+function colorFromElement(element: Element | undefined, theme?: PptxTheme): string | undefined {
+  if (!element) return undefined;
+  const srgb = firstDescendant(element, 'srgbClr');
+  if (srgb?.getAttribute('val')) return `#${srgb.getAttribute('val')}`;
+  const system = firstDescendant(element, 'sysClr');
+  if (system?.getAttribute('lastClr')) return `#${system.getAttribute('lastClr')}`;
+  const scheme = firstDescendant(element, 'schemeClr')?.getAttribute('val');
+  return scheme ? `#${theme?.colorScheme.get(scheme) ?? '111111'}` : undefined;
+}
+
+function fillColor(element: Element | undefined, theme?: PptxTheme): string | undefined {
+  if (!element) return undefined;
+  if (childElements(element, 'noFill').length > 0) return '#FFFFFF00';
+  return colorFromElement(childElements(element, 'solidFill')[0], theme);
+}
+
+function booleanValue(element: Element | undefined, fallback = true): boolean {
+  const value = element?.getAttribute('val');
+  if (value === undefined || value === null || value === '') return fallback;
+  return value === '1' || value === 'true';
+}
+
+function numericAttribute(element: Element | undefined, name = 'val'): number | undefined {
+  const value = element?.getAttribute(name);
+  if (value === undefined || value === null || value === '') return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function lineStyle(element: Element | undefined, theme?: PptxTheme, fallbackColor = '#78716C'): BorderStyle | undefined {
+  if (!element) return undefined;
+  if (childElements(element, 'noFill').length > 0) return { color: '#00000000', width: 0, style: 'solid' };
+  const width = numericAttribute(element, 'w');
+  const dash = firstDescendant(element, 'prstDash')?.getAttribute('val') ?? 'solid';
+  return {
+    color: colorFromElement(childElements(element, 'solidFill')[0], theme) ?? fallbackColor,
+    width: width !== undefined && width >= 0 ? width / 12_700 : 1,
+    style: dash === 'dot' || dash === 'sysDot' ? 'dotted' : dash === 'solid' ? 'solid' : 'dashed',
+  };
+}
+
+function directLineStyle(container: Element | undefined, theme?: PptxTheme, fallbackColor?: string): BorderStyle | undefined {
+  const properties = container ? childElements(container, 'spPr')[0] : undefined;
+  return lineStyle(properties ? childElements(properties, 'ln')[0] : undefined, theme, fallbackColor);
+}
+
+function normalizedTextStyleFromXml(
+  element: Element | undefined,
+  presentation: PresentationData,
+  theme?: PptxTheme,
+): TextStyle | undefined {
+  if (!element) return undefined;
+  const properties =
+    firstDescendant(element, 'rPr') ?? firstDescendant(element, 'defRPr') ?? firstDescendant(element, 'endParaRPr');
+  const paragraphProperties = firstDescendant(element, 'pPr');
+  const sizeHundredths = Number(properties?.getAttribute('sz') ?? 0);
+  const pointSize = sizeHundredths > 0 ? sizeHundredths / 100 : 14;
+  const alignment = paragraphProperties?.getAttribute('algn');
+  const latin = properties ? firstDescendant(properties, 'latin')?.getAttribute('typeface') : undefined;
+  return {
+    fontFamily: latin || theme?.minorFont.latin || DEFAULT_TEXT_STYLE.fontFamily,
+    fontSize: Math.max(0.012, (pointSize * (96 / 72)) / presentation.height),
+    fontWeight: properties?.getAttribute('b') === '1' || properties?.getAttribute('b') === 'true' ? 700 : 400,
+    fontStyle: properties?.getAttribute('i') === '1' || properties?.getAttribute('i') === 'true' ? 'italic' : 'normal',
+    color: colorFromElement(properties, theme) ?? DEFAULT_TEXT_STYLE.color,
+    align: alignment === 'ctr' ? 'center' : alignment === 'r' ? 'right' : 'left',
+    verticalAlign: 'top',
+    lineHeight: 1.2,
+  };
+}
+
+function chartText(element: Element | undefined): string | undefined {
+  if (!element) return undefined;
+  const rich = firstDescendant(element, 'rich');
+  if (rich) {
+    const paragraphs = descendants(rich, 'p').map((paragraph) =>
+      descendants(paragraph, 't')
+        .map((text) => text.textContent ?? '')
+        .join(''),
+    );
+    if (paragraphs.length > 0) return paragraphs.join('\n');
+  }
+  const cached = parseCache(childCache(element), 1).find((value) => value !== null);
+  if (cached !== undefined) return String(cached);
+  const value = firstDescendant(element, 'v');
+  return value ? value.textContent ?? '' : undefined;
+}
+
+function numericCache(node: Element | undefined, limit: number): Array<number | null> {
+  return parseCache(childCache(node), limit).map((value) => {
+    if (value === null || String(value).trim() === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  });
+}
+
+function categoryCache(node: Element | undefined, limit: number): Array<string | null> {
+  const multiLevel = node ? firstDescendant(node, 'multiLvlStrCache') : undefined;
+  if (multiLevel) {
+    const levels = childElements(multiLevel, 'lvl').slice(0, 32).map((level) => parseCache(level, limit));
+    const length = Math.max(0, ...levels.map((level) => level.length));
+    return Array.from({ length }, (_, index) => {
+      const parts = levels
+        .map((level) => level[index])
+        .filter((value): value is string | number => value !== null && value !== undefined && String(value) !== '')
+        .map(String);
+      return parts.length > 0 ? parts.reverse().join(' / ') : null;
+    });
+  }
+  return parseCache(childCache(node), limit).map((value) => (value === null ? null : String(value)));
+}
+
+function cacheExceedsLimit(element: Element, limit: number): boolean {
+  return (
+    descendants(element, 'ptCount').some((pointCount) => Number(pointCount.getAttribute('val')) > limit) ||
+    descendants(element, 'pt').some((point) => Number(point.getAttribute('idx')) >= limit)
+  );
+}
+
+function chartSeriesName(series: Element, index: number): string {
+  const text = childElements(series, 'tx')[0];
+  if (!text) return `Series ${index + 1}`;
+  return chartText(text) ?? '';
+}
+
+function chartPointStyles(series: Element, theme?: PptxTheme): Map<number, ChartPoint['style']> {
+  const styles = new Map<number, ChartPoint['style']>();
+  for (const point of childElements(series, 'dPt')) {
+    const index = numericAttribute(childElements(point, 'idx')[0]);
+    if (index === undefined || !Number.isInteger(index) || index < 0) continue;
+    const properties = childElements(point, 'spPr')[0];
+    const color = fillColor(properties, theme);
+    const border = lineStyle(properties ? childElements(properties, 'ln')[0] : undefined, theme);
+    if (color || border) styles.set(index, { color, border });
+  }
+  return styles;
+}
+
+function chartDataLabels(
+  series: Element,
+  presentation: PresentationData,
+  theme?: PptxTheme,
+): ChartSeries['dataLabels'] {
+  const labels = childElements(series, 'dLbls')[0];
+  if (!labels) return undefined;
+  return {
+    visible: !booleanValue(childElements(labels, 'delete')[0], false),
+    showValue: booleanValue(childElements(labels, 'showVal')[0], false),
+    showCategory: booleanValue(childElements(labels, 'showCatName')[0], false),
+    showSeries: booleanValue(childElements(labels, 'showSerName')[0], false),
+    showPercent: booleanValue(childElements(labels, 'showPercent')[0], false),
+    position: childElements(labels, 'dLblPos')[0]?.getAttribute('val') ?? undefined,
+    style: normalizedTextStyleFromXml(childElements(labels, 'txPr')[0], presentation, theme),
+  };
+}
+
+function parseChartSeries(
+  seriesNode: Element,
+  seriesIndex: number,
+  plotType: ChartType,
+  presentation: PresentationData,
+  theme?: PptxTheme,
+  pointLimit = MAX_PPTX_CHART_POINTS,
+): ChartSeries {
+  const categoriesNode = childElements(seriesNode, 'cat')[0];
+  const xNode = childElements(seriesNode, 'xVal')[0];
+  const yNode = childElements(seriesNode, 'yVal')[0];
+  const valueNode = childElements(seriesNode, 'val')[0] ?? yNode;
+  const bubbleNode = childElements(seriesNode, 'bubbleSize')[0];
+  const categories = categoryCache(categoriesNode, pointLimit);
+  const values = numericCache(valueNode, pointLimit);
+  const xValues = numericCache(xNode, pointLimit);
+  const yValues = numericCache(yNode, pointLimit);
+  const bubbleValues = numericCache(bubbleNode, pointLimit);
+  const pointCount = Math.max(categories.length, values.length, xValues.length, yValues.length, bubbleValues.length);
+  const pointStyles = chartPointStyles(seriesNode, theme);
+  const points: ChartPoint[] = Array.from({ length: pointCount }, (_, index) => {
+    const point: ChartPoint = {};
+    if (categoriesNode && index < categories.length) point.label = categories[index] ?? '';
+    if (xNode || plotType === 'scatter' || plotType === 'bubble') point.x = xValues[index] ?? null;
+    if (yNode || plotType === 'scatter' || plotType === 'bubble') point.y = yValues[index] ?? null;
+    else point.value = values[index] ?? null;
+    if (bubbleNode || plotType === 'bubble') point.size = bubbleValues[index] ?? null;
+    const style = pointStyles.get(index);
+    if (style) point.style = style;
+    return point;
+  });
+  const properties = childElements(seriesNode, 'spPr')[0];
+  const line = lineStyle(properties ? childElements(properties, 'ln')[0] : undefined, theme);
+  const markerNode = childElements(seriesNode, 'marker')[0];
+  const markerSymbol = markerNode ? childElements(markerNode, 'symbol')[0]?.getAttribute('val') ?? 'circle' : undefined;
+  const markerSize = numericAttribute(markerNode ? childElements(markerNode, 'size')[0] : undefined);
+  const markerShape =
+    markerSymbol === 'square' || markerSymbol === 'diamond' || markerSymbol === 'triangle' ? markerSymbol : 'circle';
+  const smooth = childElements(seriesNode, 'smooth')[0];
+  const formatContainer = valueNode ?? yNode ?? bubbleNode;
+  const numberFormat =
+    firstDescendant(formatContainer ?? seriesNode, 'formatCode')?.textContent ??
+    firstDescendant(childElements(seriesNode, 'dLbls')[0] ?? seriesNode, 'numFmt')?.getAttribute('formatCode') ??
+    undefined;
+  return {
+    name: chartSeriesName(seriesNode, seriesIndex),
+    points,
+    color: fillColor(properties, theme) ?? line?.color,
+    numberFormat: numberFormat || undefined,
+    marker: markerNode
+      ? {
+          visible: markerSymbol !== 'none',
+          shape: markerShape,
+          size: markerSize !== undefined && markerSize >= 0 ? markerSize : 5,
+        }
+      : undefined,
+    smooth: smooth ? booleanValue(smooth) : undefined,
+    line,
+    dataLabels: chartDataLabels(seriesNode, presentation, theme),
+  };
+}
+
+function chartType(nativeType: string): ChartType {
+  switch (nativeType) {
+    case 'barChart':
+    case 'bar3DChart':
+      return 'bar';
+    case 'lineChart':
+    case 'line3DChart':
+      return 'line';
+    case 'areaChart':
+    case 'area3DChart':
+      return 'area';
+    case 'pieChart':
+    case 'pie3DChart':
+      return 'pie';
+    case 'doughnutChart':
+      return 'doughnut';
+    case 'radarChart':
+      return 'radar';
+    case 'scatterChart':
+      return 'scatter';
+    case 'bubbleChart':
+      return 'bubble';
+    case 'stockChart':
+      return 'stock';
+    case 'surfaceChart':
+    case 'surface3DChart':
+      return 'surface';
+    default:
+      return 'unknown';
+  }
+}
+
+function applyStockPointFields(series: ChartSeries[]): ChartSeries[] {
+  const fields = series.length >= 4 ? (['open', 'high', 'low', 'close'] as const) : (['high', 'low', 'close'] as const);
+  return series.map((item, index) => {
+    const field = fields[index];
+    if (!field) return item;
+    return {
+      ...item,
+      points: item.points.map((point) => ({ ...point, [field]: point.value ?? null })),
+    };
+  });
+}
+
+function parseChartPlot(
+  element: Element,
+  context: PptxContext,
+  base: ReturnType<typeof sourceBase>,
+  chartPath: string,
+  theme?: PptxTheme,
+  pointBudget = { remaining: MAX_PPTX_CHART_POINTS, truncated: false },
+): ChartPlot {
+  const nativeType = localName(element);
+  const type = chartType(nativeType);
+  if (type === 'unknown') {
+    context.warnings.push({
+      code: 'PPTX_CHART_UNSUPPORTED',
+      severity: 'warning',
+      message: `Chart type ${nativeType || 'unknown'} was imported as an unknown plot`,
+      elementId: base.id,
+      sourcePart: chartPath,
+    });
+  }
+  if (nativeType.includes('3D')) {
+    context.warnings.push({
+      code: 'PPTX_CHART_3D_APPROXIMATION',
+      severity: 'warning',
+      message: `${nativeType} was imported as a two-dimensional ${type} plot`,
+      elementId: base.id,
+      sourcePart: chartPath,
+    });
+  }
+  const seriesElements = childElements(element, 'ser');
+  if (seriesElements.length > MAX_PPTX_CHART_SERIES) {
+    context.warnings.push({
+      code: 'PPTX_CHART_SERIES_TRUNCATED',
+      severity: 'warning',
+      message: `Chart plot series were limited to ${MAX_PPTX_CHART_SERIES}`,
+      elementId: base.id,
+      sourcePart: chartPath,
+    });
+  }
+  const series: ChartSeries[] = [];
+  for (const [index, seriesNode] of seriesElements.slice(0, MAX_PPTX_CHART_SERIES).entries()) {
+    if (pointBudget.remaining <= 0) {
+      pointBudget.truncated = true;
+      break;
+    }
+    if (cacheExceedsLimit(seriesNode, pointBudget.remaining)) pointBudget.truncated = true;
+    const parsed = parseChartSeries(seriesNode, index, type, context.presentation, theme, pointBudget.remaining);
+    pointBudget.remaining -= parsed.points.length;
+    series.push(parsed);
+  }
+  let normalizedSeries = series;
+  if (type === 'stock') normalizedSeries = applyStockPointFields(series);
+  const groupingValue = childElements(element, 'grouping')[0]?.getAttribute('val');
+  const grouping =
+    groupingValue === 'standard' || groupingValue === 'clustered' || groupingValue === 'stacked' || groupingValue === 'percentStacked'
+      ? groupingValue
+      : undefined;
+  const barDirection = childElements(element, 'barDir')[0]?.getAttribute('val');
+  const axisIds = Array.from(
+    new Set(childElements(element, 'axId').map((axis) => axis.getAttribute('val')).filter((id): id is string => Boolean(id))),
+  ).slice(0, 4);
+  const holeSize = numericAttribute(childElements(element, 'holeSize')[0]);
+  const firstSliceAngle = numericAttribute(childElements(element, 'firstSliceAng')[0]);
+  return {
+    type,
+    series: normalizedSeries,
+    grouping,
+    direction: type === 'bar' ? (barDirection === 'col' ? 'column' : 'bar') : undefined,
+    axisIds: axisIds.length > 0 ? axisIds : undefined,
+    holeSize: type === 'doughnut' && holeSize !== undefined ? Math.max(0, Math.min(90, holeSize)) : undefined,
+    firstSliceAngle:
+      (type === 'pie' || type === 'doughnut') && firstSliceAngle !== undefined ? firstSliceAngle : undefined,
+  };
+}
+
+function parseChartAxis(
+  element: Element,
+  index: number,
+  presentation: PresentationData,
+  theme?: PptxTheme,
+): ChartAxis {
+  const nativeType = localName(element);
+  const kind: ChartAxis['kind'] = nativeType === 'valAx' ? 'value' : nativeType === 'dateAx' ? 'date' : 'category';
+  const positionValue = childElements(element, 'axPos')[0]?.getAttribute('val');
+  const position: ChartAxis['position'] =
+    positionValue === 't'
+      ? 'top'
+      : positionValue === 'r'
+        ? 'right'
+        : positionValue === 'l'
+          ? 'left'
+          : positionValue === 'b'
+            ? 'bottom'
+            : kind === 'value'
+              ? 'left'
+              : 'bottom';
+  const scaling = childElements(element, 'scaling')[0];
+  const minimum = numericAttribute(scaling ? childElements(scaling, 'min')[0] : undefined);
+  const maximum = numericAttribute(scaling ? childElements(scaling, 'max')[0] : undefined);
+  const title = childElements(element, 'title')[0];
+  const gridlines = childElements(element, 'majorGridlines')[0];
+  const gridlineStyle =
+    directLineStyle(gridlines, theme, '#D6D3D1') ??
+    (gridlines ? { color: '#D6D3D1', width: 1, style: 'solid' as const } : undefined);
+  return {
+    id: childElements(element, 'axId')[0]?.getAttribute('val') || `axis-${index + 1}`,
+    kind,
+    position,
+    visible: !booleanValue(childElements(element, 'delete')[0], false),
+    reversed: childElements(scaling ?? element, 'orientation')[0]?.getAttribute('val') === 'maxMin' || undefined,
+    title: chartText(title),
+    titleStyle: normalizedTextStyleFromXml(title, presentation, theme),
+    labelStyle: normalizedTextStyleFromXml(childElements(element, 'txPr')[0], presentation, theme),
+    numberFormat: childElements(element, 'numFmt')[0]?.getAttribute('formatCode') ?? undefined,
+    minimum,
+    maximum,
+    majorGridlines: gridlineStyle,
+    line: directLineStyle(element, theme),
+  };
 }
 
 function parseChart(
@@ -292,57 +702,283 @@ function parseChart(
     return { ...base, type: 'unsupported', reason: 'Chart data is missing', fallbackText: node.name };
   }
 
-  const chartTypeElement = Array.from(chart.getElementsByTagName('*')).find((element) => localName(element).endsWith('Chart'));
-  const nativeType = chartTypeElement ? localName(chartTypeElement) : '';
-  const barDirection = firstDescendant(chart, 'barDir')?.getAttribute('val');
-  const chartType: ChartElement['chartType'] = nativeType.includes('bar')
-    ? barDirection === 'col'
-      ? 'column'
-      : 'bar'
-    : nativeType.includes('line')
-      ? 'line'
-      : nativeType.includes('pie') || nativeType.includes('doughnut')
-        ? 'pie'
-        : nativeType.includes('area')
-          ? 'area'
-          : 'unknown';
-  if (chartType === 'unknown') {
+  const chartRoot = localName(chart) === 'chart' ? chart : firstDescendant(chart, 'chart') ?? chart;
+  const plotArea = childElements(chartRoot, 'plotArea')[0] ?? firstDescendant(chartRoot, 'plotArea');
+  const theme = context.presentation.chartThemes?.get(node.chartPath) ?? themeForSourcePart(context, base.source.part);
+  const allPlotElements = plotArea
+    ? childElements(plotArea).filter((element) => localName(element).toLowerCase().endsWith('chart'))
+    : [];
+  const cacheTruncated =
+    descendants(chartRoot, 'ptCount').some((element) => Number(element.getAttribute('val')) > MAX_PPTX_CHART_POINTS) ||
+    descendants(chartRoot, 'pt').some((element) => Number(element.getAttribute('idx')) >= MAX_PPTX_CHART_POINTS);
+  if (allPlotElements.length > MAX_PPTX_CHART_PLOTS) {
     context.warnings.push({
-      code: 'PPTX_CHART_UNSUPPORTED',
+      code: 'PPTX_CHART_PLOTS_TRUNCATED',
       severity: 'warning',
-      message: `Chart type ${nativeType || 'unknown'} is not supported in this release`,
+      message: `Chart plots were limited to ${MAX_PPTX_CHART_PLOTS}`,
       elementId: base.id,
       sourcePart: node.chartPath,
     });
-    return {
-      ...base,
-      type: 'unsupported',
-      reason: `Unsupported PPTX chart type: ${nativeType || 'unknown'}`,
-      fallbackText: node.name,
-    };
   }
-  const series: ChartSeries[] = [];
-  let categories: string[] = [];
-
-  for (const seriesNode of descendants(chartTypeElement ?? chart, 'ser')) {
-    const txNode = childElements(seriesNode, 'tx')[0];
-    const catNode = childElements(seriesNode, 'cat')[0];
-    const valNode = childElements(seriesNode, 'val')[0] ?? childElements(seriesNode, 'yVal')[0];
-    const rawCategories = parseCache(childCache(catNode));
-    const values = parseCache(childCache(valNode)).map((value) => {
-      if (value === null || value === '') return null;
-      const number = Number(value);
-      return Number.isFinite(number) ? number : null;
-    });
-    if (rawCategories.length > categories.length) categories = rawCategories.map((value) => String(value ?? ''));
-    series.push({
-      name: String(parseCache(childCache(txNode)).find((value) => value !== null) ?? `Series ${series.length + 1}`),
-      values,
+  const plotElements = allPlotElements.slice(0, MAX_PPTX_CHART_PLOTS);
+  if (plotElements.length === 0) {
+    context.warnings.push({
+      code: 'PPTX_CHART_UNSUPPORTED',
+      severity: 'warning',
+      message: 'Chart plot data was imported as an unknown plot',
+      elementId: base.id,
+      sourcePart: node.chartPath,
     });
   }
+  const pointBudget = { remaining: MAX_PPTX_CHART_POINTS, truncated: cacheTruncated };
+  const plots =
+    plotElements.length > 0
+      ? plotElements.map((element) => parseChartPlot(element, context, base, node.chartPath, theme, pointBudget))
+      : [{ type: 'unknown' as const, series: [] }];
+  if (pointBudget.truncated) {
+    context.warnings.push({
+      code: 'PPTX_CHART_DATA_TRUNCATED',
+      severity: 'warning',
+      message: `Chart data was limited to ${MAX_PPTX_CHART_POINTS} points`,
+      elementId: base.id,
+      sourcePart: node.chartPath,
+    });
+  }
+  const axesById = new Map<string, ChartAxis>();
+  if (plotArea) {
+    childElements(plotArea)
+      .filter((element) => ['catAx', 'dateAx', 'valAx', 'serAx'].includes(localName(element)))
+      .forEach((element, index) => {
+        const axis = parseChartAxis(element, index, context.presentation, theme);
+        if (!axesById.has(axis.id)) axesById.set(axis.id, axis);
+      });
+  }
+  for (const plot of plots) {
+    plot.axisIds?.forEach((id, index) => {
+      if (axesById.has(id)) return;
+      axesById.set(id, {
+        id,
+        kind: index === 0 ? 'category' : 'value',
+        position: index === 0 ? 'bottom' : 'left',
+        visible: true,
+      });
+    });
+  }
+  const title = childElements(chartRoot, 'title')[0];
+  const legendElement = childElements(chartRoot, 'legend')[0];
+  const legendPosition = legendElement ? childElements(legendElement, 'legendPos')[0]?.getAttribute('val') : undefined;
+  const displayBlanksValue = childElements(chartRoot, 'dispBlanksAs')[0]?.getAttribute('val');
+  const chartProperties = childElements(chart, 'spPr')[0];
+  const plotProperties = plotArea ? childElements(plotArea, 'spPr')[0] : undefined;
+  return {
+    ...base,
+    type: 'chart',
+    plots,
+    axes: Array.from(axesById.values()),
+    title: chartText(title),
+    titleStyle: normalizedTextStyleFromXml(title, context.presentation, theme),
+    legend: legendElement
+      ? {
+          visible: !booleanValue(childElements(legendElement, 'delete')[0], false),
+          position:
+            legendPosition === 't'
+              ? 'top'
+              : legendPosition === 'b'
+                ? 'bottom'
+                : legendPosition === 'l'
+                  ? 'left'
+                  : legendPosition === 'tr'
+                    ? 'topRight'
+                    : 'right',
+          overlay: booleanValue(childElements(legendElement, 'overlay')[0], false),
+          style: normalizedTextStyleFromXml(childElements(legendElement, 'txPr')[0], context.presentation, theme),
+        }
+      : undefined,
+    displayBlanksAs:
+      displayBlanksValue === 'gap' || displayBlanksValue === 'zero' || displayBlanksValue === 'span'
+        ? displayBlanksValue
+        : undefined,
+    background: fillColor(chartProperties, theme),
+    plotBackground: fillColor(plotProperties, theme),
+  };
+}
 
-  const title = firstDescendant(firstDescendant(chart, 'title') ?? chart, 't')?.textContent ?? undefined;
-  return { ...base, type: 'chart', chartType, categories, series, title };
+function cellStyle(
+  cell: TableNodeData['rows'][number]['cells'][number],
+  context: PptxContext,
+  theme?: PptxTheme,
+): TableCellStyle | undefined {
+  const properties = cell.properties as XmlNodeLike | undefined;
+  const element = properties?.element ?? undefined;
+  const border = (name: string) => lineStyle(element ? childElements(element, name)[0] : undefined, theme);
+  const borders = {
+    top: border('lnT'),
+    right: border('lnR'),
+    bottom: border('lnB'),
+    left: border('lnL'),
+  };
+  const hasBorders = Object.values(borders).some(Boolean);
+  const marginNames = ['marT', 'marR', 'marB', 'marL'] as const;
+  const margins = marginNames.map((name) => Number(properties?.attr(name)));
+  const hasPadding = margins.some(Number.isFinite);
+  const anchor = properties?.attr('anchor');
+  const verticalAlign = anchor === 'ctr' ? 'middle' : anchor === 'b' ? 'bottom' : anchor === 't' ? 'top' : undefined;
+  const style: TableCellStyle = {
+    fill: element ? fillColor(element, theme) : undefined,
+    textStyle: cell.textBody ? textStyle(cell.textBody, context.presentation, theme) : undefined,
+    verticalAlign,
+    padding: hasPadding
+      ? {
+          top: Number.isFinite(margins[0]) ? Math.max(0, margins[0]! / 9_525) : 4.8,
+          right: Number.isFinite(margins[1]) ? Math.max(0, margins[1]! / 9_525) : 9.6,
+          bottom: Number.isFinite(margins[2]) ? Math.max(0, margins[2]! / 9_525) : 4.8,
+          left: Number.isFinite(margins[3]) ? Math.max(0, margins[3]! / 9_525) : 9.6,
+        }
+      : undefined,
+    borders: hasBorders ? borders : undefined,
+  };
+  return Object.values(style).some((value) => value !== undefined) ? style : undefined;
+}
+
+function inferredTableColumnCount(table: TableNodeData): { count: number; truncated: boolean } {
+  let maximum = Math.min(table.columns.length, MAX_PPTX_TABLE_COLUMNS);
+  let inspectedCells = 0;
+  let truncated = table.columns.length > MAX_PPTX_TABLE_COLUMNS || table.rows.length > MAX_PPTX_TABLE_ROWS;
+  rowLoop: for (const row of table.rows.slice(0, MAX_PPTX_TABLE_ROWS)) {
+    let column = 0;
+    for (const cell of row.cells) {
+      if (inspectedCells >= MAX_PPTX_TABLE_CELLS) {
+        truncated = true;
+        break rowLoop;
+      }
+      inspectedCells += 1;
+      const requestedSpan = Number(cell.gridSpan);
+      const span = Number.isFinite(requestedSpan)
+        ? Math.min(MAX_PPTX_TABLE_COLUMNS, Math.max(1, Math.floor(requestedSpan)))
+        : 1;
+      if (requestedSpan > MAX_PPTX_TABLE_COLUMNS) truncated = true;
+      if (cell.hMerge || cell.vMerge) {
+        if (cell.vMerge && !cell.hMerge) column += span;
+        continue;
+      }
+      column += span;
+      maximum = Math.max(maximum, column);
+      if (maximum >= MAX_PPTX_TABLE_COLUMNS) {
+        maximum = MAX_PPTX_TABLE_COLUMNS;
+        if (column > MAX_PPTX_TABLE_COLUMNS) truncated = true;
+      }
+    }
+  }
+  return { count: Math.max(1, maximum), truncated };
+}
+
+function parseTable(
+  table: TableNodeData,
+  context: PptxContext,
+  base: ReturnType<typeof sourceBase>,
+  sourcePart: string,
+): TableElement {
+  const theme = themeForSourcePart(context, sourcePart);
+  const inferredColumns = inferredTableColumnCount(table);
+  const columnCount = inferredColumns.count;
+  let truncated = inferredColumns.truncated;
+  const properties = table.properties as XmlNodeLike | undefined;
+  const firstRowValue = properties?.attr('firstRow');
+  const firstRowHeader = firstRowValue !== '0' && firstRowValue !== 'false';
+  if (table.tableStyleId) {
+    context.warnings.push({
+      code: 'PPTX_TABLE_STYLE_PARTIAL',
+      severity: 'warning',
+      message: `Table style ${table.tableStyleId} could not be fully normalized; direct cell formatting was preserved`,
+      elementId: base.id,
+      sourcePart,
+    });
+  }
+  const defaultBorder = { color: '#78716C', width: 1, style: 'solid' as const };
+  const sourceRows = table.rows.slice(0, MAX_PPTX_TABLE_ROWS);
+  const rows: TableElement['rows'] = [];
+  let inspectedCells = 0;
+  for (let rowIndex = 0; rowIndex < sourceRows.length; rowIndex += 1) {
+    if (inspectedCells >= MAX_PPTX_TABLE_CELLS) {
+      truncated = true;
+      break;
+    }
+    const row = sourceRows[rowIndex]!;
+    let column = 0;
+    const cells: TableElement['rows'][number]['cells'] = [];
+    for (const cell of row.cells) {
+      if (inspectedCells >= MAX_PPTX_TABLE_CELLS) {
+        truncated = true;
+        break;
+      }
+      inspectedCells += 1;
+      const requestedColumnSpan = Number(cell.gridSpan);
+      const sourceColumnSpan = Number.isFinite(requestedColumnSpan)
+        ? Math.min(MAX_PPTX_TABLE_COLUMNS, Math.max(1, Math.floor(requestedColumnSpan)))
+        : 1;
+      if (requestedColumnSpan > MAX_PPTX_TABLE_COLUMNS) truncated = true;
+      if (cell.hMerge || cell.vMerge) {
+        if (cell.vMerge && !cell.hMerge) column += sourceColumnSpan;
+        continue;
+      }
+      if (column >= columnCount) continue;
+      const columnSpan = Math.min(sourceColumnSpan, columnCount - column);
+      const requestedRowSpan = Number(cell.rowSpan);
+      const sourceRowSpan = Number.isFinite(requestedRowSpan)
+        ? Math.max(1, Math.floor(requestedRowSpan))
+        : 1;
+      if (sourceRowSpan > MAX_PPTX_TABLE_ROWS) truncated = true;
+      const rowSpan = Math.min(sourceRowSpan, sourceRows.length - rowIndex);
+      cells.push({
+        column,
+        text: textFromBody(cell.textBody),
+        columnSpan: columnSpan > 1 ? columnSpan : undefined,
+        rowSpan: rowSpan > 1 ? rowSpan : undefined,
+        header: rowIndex === 0 && firstRowHeader ? true : undefined,
+        style: cellStyle(cell, context, theme),
+      });
+      column += sourceColumnSpan;
+    }
+    rows.push({
+      height: Number.isFinite(row.height) && row.height > 0 ? row.height : 1,
+      cells,
+    });
+  }
+  rows.forEach((row, rowIndex) => {
+    for (const cell of row.cells) {
+      const rowSpan = Math.min(cell.rowSpan ?? 1, rows.length - rowIndex);
+      cell.rowSpan = rowSpan > 1 ? rowSpan : undefined;
+    }
+  });
+  if (truncated) {
+    context.warnings.push({
+      code: 'PPTX_TABLE_TRUNCATED',
+      severity: 'warning',
+      message: `Table import was bounded to ${MAX_PPTX_TABLE_ROWS} rows, ${MAX_PPTX_TABLE_COLUMNS} columns, and ${MAX_PPTX_TABLE_CELLS} cells`,
+      elementId: base.id,
+      sourcePart,
+    });
+  }
+  return {
+    ...base,
+    type: 'table',
+    columns: Array.from({ length: columnCount }, (_, index) => {
+      const width = table.columns[index];
+      return Number.isFinite(width) && width! > 0 ? width! : 1;
+    }),
+    rows,
+    style: {
+      fill: '#FFFFFF',
+      textStyle: {
+        ...DEFAULT_TEXT_STYLE,
+        fontFamily: theme?.minorFont.latin || DEFAULT_TEXT_STYLE.fontFamily,
+        fontSize: 0.026,
+      },
+      verticalAlign: 'middle',
+      padding: { top: 4.8, right: 9.6, bottom: 4.8, left: 9.6 },
+      borders: { top: defaultBorder, right: defaultBorder, bottom: defaultBorder, left: defaultBorder },
+    },
+  };
 }
 
 function mapSlideNode(
@@ -418,16 +1054,7 @@ function mapSlideNode(
 
   if (node.nodeType === 'table') {
     const table = node as TableNodeData;
-    return {
-      ...common,
-      type: 'table',
-      rows: table.rows.map((row) => row.cells.map((cell) => textFromBody(cell.textBody))),
-      headerRows: table.rows.length > 0 ? 1 : 0,
-      fill: '#FFFFFF',
-      stroke: '#78716C',
-      textStyle: { ...DEFAULT_TEXT_STYLE, fontSize: 0.026 },
-      placeholder,
-    };
+    return { ...parseTable(table, context, common, sourcePart), placeholder };
   }
 
   if (node.nodeType === 'chart') {

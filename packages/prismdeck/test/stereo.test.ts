@@ -1,8 +1,23 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
-import { configureStereoCameraRig, OUTPUT_PRESETS } from '../src/index';
+import {
+  configureStereoCameraRig,
+  OUTPUT_PRESETS,
+  pinholeScale,
+  projectPinholePoint,
+  scaledStereoEyeSeparationRatio,
+} from '../src/index';
+import { outputViewport } from '../src/render/renderer';
 
 describe('stereo camera rig', () => {
+  test('uses pinhole scale and bounded depth calibration', () => {
+    expect(pinholeScale(36, 4)).toBeCloseTo(0.9);
+    expect(projectPinholePoint({ x: 10, y: 6 }, { x: 2, y: 2 }, 36, 4)).toEqual({ x: 9.2, y: 5.6, scale: 0.9 });
+    expect(scaledStereoEyeSeparationRatio(0.04, 0)).toBe(0);
+    expect(scaledStereoEyeSeparationRatio(0.04, 1)).toBe(0.04);
+    expect(scaledStereoEyeSeparationRatio(0.04, 1.5)).toBe(0.06);
+  });
+
   test('keeps the convergence plane centered for both parallel cameras', () => {
     const left = new PerspectiveCamera();
     const right = new PerspectiveCamera();
@@ -26,5 +41,11 @@ describe('stereo camera rig', () => {
     expect(OUTPUT_PRESETS['full-sbs']).toMatchObject({ width: 3840, height: 1080, eyeWidth: 1920 });
     expect(OUTPUT_PRESETS['half-sbs']).toMatchObject({ width: 1920, height: 1080, eyeWidth: 960 });
     expect(OUTPUT_PRESETS['half-sbs'].logicalEyeAspect).toBe(16 / 9);
+  });
+
+  test('previews full SBS at its native 32:9 aspect while half SBS fills 16:9', () => {
+    expect(outputViewport('full-sbs', 1600, 900)).toEqual({ x: 0, y: 225, width: 1600, height: 450 });
+    expect(outputViewport('full-sbs', 3840, 1080)).toEqual({ x: 0, y: 0, width: 3840, height: 1080 });
+    expect(outputViewport('half-sbs', 1600, 900)).toEqual({ x: 0, y: 0, width: 1600, height: 900 });
   });
 });

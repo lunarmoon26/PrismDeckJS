@@ -1,4 +1,5 @@
-export const PRISMDECK_SCHEMA_VERSION = '0.1.0' as const;
+export const PRISMDECK_SCHEMA_VERSION = '0.2.0' as const;
+export const LEGACY_PRISMDECK_SCHEMA_VERSION = '0.1.0' as const;
 export const PRISMDECK_MIME_TYPE = 'application/vnd.prismdeck+zip' as const;
 
 export type SourceFormat = 'pptx' | 'odp' | 'prismdeck' | 'native';
@@ -67,6 +68,7 @@ export interface DeckElementBase {
   opacity: number;
   visible: boolean;
   renderOrder: number;
+  /** Scene-unit extrusion depth. Omitted or zero renders as a flat UI plane. */
   thickness?: number;
   physics?: ElementPhysics;
   source?: ElementSource;
@@ -107,27 +109,172 @@ export interface ShapeElement extends DeckElementBase {
   textStyle?: TextStyle;
 }
 
+export type LineStyle = 'solid' | 'dashed' | 'dotted';
+
+export interface BorderStyle {
+  color: string;
+  width: number;
+  style: LineStyle;
+}
+
+export interface TableCellBorders {
+  top?: BorderStyle;
+  right?: BorderStyle;
+  bottom?: BorderStyle;
+  left?: BorderStyle;
+}
+
+export interface TableCellPadding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface TableCellStyle {
+  fill?: string;
+  textStyle?: TextStyle;
+  verticalAlign?: TextStyle['verticalAlign'];
+  padding?: TableCellPadding;
+  borders?: TableCellBorders;
+}
+
+export interface TableCell {
+  column: number;
+  text: string;
+  columnSpan?: number;
+  rowSpan?: number;
+  header?: boolean;
+  style?: TableCellStyle;
+}
+
+export interface TableRow {
+  /** Relative row-height weight. */
+  height: number;
+  cells: TableCell[];
+}
+
 export interface TableElement extends DeckElementBase {
   type: 'table';
-  rows: string[][];
-  headerRows: number;
-  fill: string;
-  stroke: string;
-  textStyle: TextStyle;
+  /** Relative column-width weights. */
+  columns: number[];
+  rows: TableRow[];
+  style: TableCellStyle;
+}
+
+export type ChartType =
+  | 'bar'
+  | 'line'
+  | 'area'
+  | 'pie'
+  | 'doughnut'
+  | 'radar'
+  | 'scatter'
+  | 'bubble'
+  | 'stock'
+  | 'surface'
+  | 'histogram'
+  | 'pareto'
+  | 'boxWhisker'
+  | 'waterfall'
+  | 'treemap'
+  | 'sunburst'
+  | 'funnel'
+  | 'regionMap'
+  | 'unknown';
+
+export interface ChartPointStyle {
+  color?: string;
+  border?: BorderStyle;
+}
+
+export interface ChartPoint {
+  id?: string;
+  parentId?: string;
+  label?: string;
+  value?: number | null;
+  x?: number | null;
+  y?: number | null;
+  size?: number | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  close?: number | null;
+  /** Multi-value data such as [minimum, first quartile, median, third quartile, maximum]. */
+  values?: Array<number | null>;
+  style?: ChartPointStyle;
+}
+
+export interface ChartMarker {
+  visible: boolean;
+  shape: 'circle' | 'square' | 'diamond' | 'triangle';
+  size: number;
+}
+
+export interface ChartDataLabels {
+  visible: boolean;
+  showValue?: boolean;
+  showCategory?: boolean;
+  showSeries?: boolean;
+  showPercent?: boolean;
+  position?: string;
+  style?: TextStyle;
 }
 
 export interface ChartSeries {
   name: string;
-  values: Array<number | null>;
+  points: ChartPoint[];
   color?: string;
+  numberFormat?: string;
+  marker?: ChartMarker;
+  smooth?: boolean;
+  line?: BorderStyle;
+  dataLabels?: ChartDataLabels;
+}
+
+export interface ChartPlot {
+  type: ChartType;
+  series: ChartSeries[];
+  grouping?: 'standard' | 'clustered' | 'stacked' | 'percentStacked';
+  direction?: 'bar' | 'column';
+  axisIds?: string[];
+  holeSize?: number;
+  firstSliceAngle?: number;
+}
+
+export interface ChartAxis {
+  id: string;
+  kind: 'category' | 'date' | 'value';
+  position: 'top' | 'right' | 'bottom' | 'left';
+  visible: boolean;
+  reversed?: boolean;
+  title?: string;
+  titleStyle?: TextStyle;
+  labelStyle?: TextStyle;
+  numberFormat?: string;
+  minimum?: number;
+  maximum?: number;
+  majorGridlines?: BorderStyle;
+  line?: BorderStyle;
+}
+
+export interface ChartLegend {
+  visible: boolean;
+  position: 'top' | 'right' | 'bottom' | 'left' | 'topRight';
+  overlay?: boolean;
+  style?: TextStyle;
 }
 
 export interface ChartElement extends DeckElementBase {
   type: 'chart';
-  chartType: 'bar' | 'column' | 'line' | 'pie' | 'area' | 'unknown';
-  categories: string[];
-  series: ChartSeries[];
+  plots: ChartPlot[];
+  axes: ChartAxis[];
   title?: string;
+  titleStyle?: TextStyle;
+  legend?: ChartLegend;
+  displayBlanksAs?: 'gap' | 'zero' | 'span';
+  background?: string;
+  plotBackground?: string;
 }
 
 export interface UnsupportedElement extends DeckElementBase {
@@ -150,11 +297,19 @@ export interface DeckLayout {
   elements: DeckElement[];
 }
 
+export type SlideTransitionType = 'cut' | 'fade' | 'slide';
+
+export interface SlideTransition {
+  type: SlideTransitionType;
+  durationMs: number;
+}
+
 export interface DeckSlide {
   id: string;
   name: string;
   layoutId?: string;
   durationMs: number;
+  transition?: SlideTransition;
   background: string;
   notes?: string;
   elements: DeckElement[];

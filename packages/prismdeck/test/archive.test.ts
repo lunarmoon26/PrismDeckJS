@@ -10,6 +10,7 @@ import {
   loadPrismDeckHtml,
   savePrismDeck,
   savePrismDeckHtml,
+  validateDeckDocument,
   type LoadedDeck,
 } from '../src/index';
 
@@ -24,10 +25,11 @@ function fixture(): LoadedDeck {
       layouts: [],
       slides: [
         {
-          id: 'slide-1',
-          name: 'Slide 1',
-          durationMs: 5_000,
-          background: '#FFFFFF',
+           id: 'slide-1',
+           name: 'Slide 1',
+           durationMs: 5_000,
+           transition: { type: 'fade', durationMs: 350 },
+           background: '#FFFFFF',
           elements: [
             {
               id: 'title',
@@ -40,6 +42,55 @@ function fixture(): LoadedDeck {
               renderOrder: 0,
               text: 'Round trip',
               style: { ...DEFAULT_TEXT_STYLE },
+            },
+            {
+              id: 'table',
+              type: 'table',
+              name: 'Results table',
+              frame: { x: 0.1, y: 0.35, width: 0.38, height: 0.3 },
+              transform: { ...DEFAULT_TRANSFORM },
+              opacity: 1,
+              visible: true,
+              renderOrder: 1,
+              columns: [2, 1],
+              rows: [
+                { height: 1, cells: [{ column: 0, columnSpan: 2, text: 'Results', header: true }] },
+                { height: 1, cells: [{ column: 0, text: 'Revenue' }, { column: 1, text: '42' }] },
+              ],
+              style: {
+                fill: '#FFFFFF',
+                textStyle: { ...DEFAULT_TEXT_STYLE },
+                borders: {
+                  top: { color: '#78716C', width: 1, style: 'solid' },
+                  right: { color: '#78716C', width: 1, style: 'solid' },
+                  bottom: { color: '#78716C', width: 1, style: 'solid' },
+                  left: { color: '#78716C', width: 1, style: 'solid' },
+                },
+              },
+            },
+            {
+              id: 'chart',
+              type: 'chart',
+              name: 'Revenue chart',
+              frame: { x: 0.52, y: 0.35, width: 0.38, height: 0.3 },
+              transform: { ...DEFAULT_TRANSFORM },
+              opacity: 1,
+              visible: true,
+              renderOrder: 2,
+              title: 'Revenue',
+              axes: [
+                { id: 'category', kind: 'category', position: 'bottom', visible: true },
+                { id: 'value', kind: 'value', position: 'left', visible: true },
+              ],
+              plots: [
+                {
+                  type: 'bar',
+                  direction: 'column',
+                  grouping: 'clustered',
+                  axisIds: ['category', 'value'],
+                  series: [{ name: 'Sales', color: '#2563EB', points: [{ label: 'Q1', value: 42 }] }],
+                },
+              ],
             },
           ],
         },
@@ -72,6 +123,64 @@ describe('.prismdeck archive', () => {
 
     await expect(loadPrismDeck(zipSync(files))).rejects.toThrow(/Asset (size|digest) mismatch/);
   });
+
+  test('migrates persisted 0.1.0 chart and table payloads', async () => {
+    const legacyDocument = {
+      schemaVersion: '0.1.0',
+      id: 'legacy-deck',
+      kind: 'presentation',
+      metadata: { title: 'Legacy' },
+      size: { width: 1600, height: 900 },
+      layouts: [],
+      slides: [{
+        id: 'slide',
+        name: 'Slide',
+        durationMs: 5000,
+        background: '#FFFFFF',
+        elements: [
+          {
+            id: 'legacy-table', type: 'table', name: 'Table', frame: { x: 0, y: 0, width: 0.5, height: 0.5 },
+            transform: { ...DEFAULT_TRANSFORM }, opacity: 1, visible: true, renderOrder: 0,
+            rows: [['Header', 'Value'], ['A', '1']], headerRows: 1, fill: '#FFFFFF', stroke: '#111111',
+            textStyle: { ...DEFAULT_TEXT_STYLE },
+          },
+          {
+            id: 'legacy-chart', type: 'chart', name: 'Chart', frame: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
+            transform: { ...DEFAULT_TRANSFORM }, opacity: 1, visible: true, renderOrder: 1,
+            chartType: 'column', categories: ['A'], series: [{ name: 'Series', values: [3], color: '#2563EB' }],
+          },
+        ],
+      }],
+    };
+    const manifest = { format: 'prismdeck', packageVersion: '0.1.0', document: 'deck.json', assets: [] };
+    const loaded = await loadPrismDeck(zipSync({
+      'manifest.json': strToU8(JSON.stringify(manifest)),
+      'deck.json': strToU8(JSON.stringify(legacyDocument)),
+    }));
+
+    expect(loaded.document.schemaVersion).toBe(PRISMDECK_SCHEMA_VERSION);
+    const migratedTable = loaded.document.slides[0]?.elements[0];
+    expect(migratedTable).toMatchObject({ type: 'table', columns: [1, 1] });
+    expect(migratedTable?.type === 'table' && migratedTable.rows[0]?.cells.map((cell) => cell.header)).toEqual([true, true]);
+    expect(loaded.document.slides[0]?.elements[1]).toMatchObject({
+      type: 'chart',
+      plots: [{ type: 'bar', direction: 'column', series: [{ points: [{ label: 'A', value: 3 }] }] }],
+    });
+  });
+
+  test('rejects table cells that exceed the normalized grid', () => {
+    const invalid = fixture().document;
+    const table = invalid.slides[0]?.elements.find((element) => element.type === 'table');
+    if (table?.type === 'table') table.rows[0]!.cells[0]!.columnSpan = 3;
+    expect(() => validateDeckDocument(invalid)).toThrow(/invalid cell span/);
+  });
+
+  test('rejects overlapping normalized table cells', () => {
+    const invalid = fixture().document;
+    const table = invalid.slides[0]?.elements.find((element) => element.type === 'table');
+    if (table?.type === 'table') table.rows[1]!.cells[1]!.column = 0;
+    expect(() => validateDeckDocument(invalid)).toThrow(/overlapping cells/);
+  });
 });
 
 describe('PrismDeck HTML package', () => {
@@ -84,6 +193,10 @@ describe('PrismDeck HTML package', () => {
     expect(saved.type).toBe('text/html;charset=utf-8');
     expect(html).toContain(DEFAULT_PRISMDECK_CDN_URL);
     expect(html).toContain('type="application/vnd.prismdeck+zip;base64"');
+    expect(html).toContain('id="slide-semantics"');
+    expect(html).toContain("document.createElement(cell.header ? 'th' : 'td')");
+    expect(html).toContain('MAX_SEMANTIC_CELLS = 5000');
+    expect(html).toContain('Additional chart or table data is omitted');
     expect(loaded.document).toEqual(source.document);
     expect(loaded.assets.get('pixel')).toEqual(source.assets.get('pixel'));
   });

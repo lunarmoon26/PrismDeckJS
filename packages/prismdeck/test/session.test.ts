@@ -47,13 +47,14 @@ function templateDeck(): LoadedDeck {
 describe('PresentationSession', () => {
   test('creates independent slides from imported layouts and edits depth', () => {
     const session = new PresentationSession(templateDeck());
-    const first = session.createSlide('layout-title', { name: 'First' });
+    const first = session.createSlide('layout-title', { name: 'First', background: '#123456' });
     const second = session.createSlide('layout-title', { name: 'Second' });
 
     expect(session.document.kind).toBe('presentation');
     expect(session.document.slides).toHaveLength(2);
     expect(first.elements[0]?.id).not.toBe(second.elements[0]?.id);
     expect(first.elements[0]?.id).not.toBe('layout-title-element');
+    expect(second.background).toBe('#123456');
 
     expect(session.updateElementTransform(first.elements[0]!.id, { z: 0.25, rotationY: 15 })).toBe(true);
     expect(first.elements[0]?.transform).toMatchObject({ z: 0.25, rotationY: 15 });
@@ -79,5 +80,25 @@ describe('PresentationSession', () => {
     session.play(1_000);
     expect(session.tick(1_000)).toBe(true);
     expect(session.isPlaying).toBe(false);
+  });
+
+  test('adds validated elements to the active slide', () => {
+    const session = new PresentationSession(templateDeck());
+    session.createSlide('layout-title');
+
+    expect(session.addElement({
+      id: 'drawn-text',
+      type: 'text',
+      name: 'Text box',
+      frame: { x: 0.2, y: 0.3, width: 0.4, height: 0.15 },
+      transform: { ...DEFAULT_TRANSFORM },
+      opacity: 1,
+      visible: true,
+      renderOrder: 2,
+      text: 'Drawn text',
+      style: { ...DEFAULT_TEXT_STYLE },
+    })).toBe(true);
+    expect(session.findTextElement('drawn-text')?.text).toBe('Drawn text');
+    expect(session.addElement(session.findTextElement('drawn-text')!)).toBe(false);
   });
 });

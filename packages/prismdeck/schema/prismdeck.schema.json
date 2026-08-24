@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://prismdeckjs.dev/schema/prismdeck-0.1.0.json",
+  "$id": "https://prismdeckjs.dev/schema/prismdeck-0.2.0.json",
   "title": "PrismDeck document",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "kind", "metadata", "size", "layouts", "slides"],
   "properties": {
-    "schemaVersion": { "const": "0.1.0" },
+    "schemaVersion": { "const": "0.2.0" },
     "id": { "$ref": "#/$defs/id" },
     "kind": { "enum": ["presentation", "template"] },
     "metadata": {
@@ -23,17 +23,12 @@
       }
     },
     "size": { "$ref": "#/$defs/size" },
-    "layouts": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/layout" }
-    },
-    "slides": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/slide" }
-    }
+    "layouts": { "type": "array", "items": { "$ref": "#/$defs/layout" } },
+    "slides": { "type": "array", "items": { "$ref": "#/$defs/slide" } }
   },
   "$defs": {
     "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "color": { "type": "string", "minLength": 1, "maxLength": 200 },
     "size": {
       "type": "object",
       "additionalProperties": false,
@@ -79,9 +74,220 @@
         "friction": { "type": "number", "minimum": 0, "maximum": 2 }
       }
     },
-    "element": {
+    "source": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
+      "required": ["format"],
+      "properties": {
+        "format": { "enum": ["pptx", "odp", "prismdeck", "native"] },
+        "part": { "type": "string" },
+        "nativeId": { "type": "string" },
+        "nativeType": { "type": "string" }
+      }
+    },
+    "placeholder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string" },
+        "index": { "type": "integer" },
+        "prompt": { "type": "string" }
+      }
+    },
+    "textStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fontFamily", "fontSize", "fontWeight", "fontStyle", "color", "align", "verticalAlign", "lineHeight"],
+      "properties": {
+        "fontFamily": { "type": "string" },
+        "fontSize": { "type": "number", "exclusiveMinimum": 0 },
+        "fontWeight": { "type": "number", "minimum": 1, "maximum": 1000 },
+        "fontStyle": { "enum": ["normal", "italic"] },
+        "color": { "$ref": "#/$defs/color" },
+        "align": { "enum": ["left", "center", "right"] },
+        "verticalAlign": { "enum": ["top", "middle", "bottom"] },
+        "lineHeight": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "borderStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color", "width", "style"],
+      "properties": {
+        "color": { "$ref": "#/$defs/color" },
+        "width": { "type": "number", "minimum": 0 },
+        "style": { "enum": ["solid", "dashed", "dotted"] }
+      }
+    },
+    "tableCellBorders": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "top": { "$ref": "#/$defs/borderStyle" },
+        "right": { "$ref": "#/$defs/borderStyle" },
+        "bottom": { "$ref": "#/$defs/borderStyle" },
+        "left": { "$ref": "#/$defs/borderStyle" }
+      }
+    },
+    "tableCellPadding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["top", "right", "bottom", "left"],
+      "properties": {
+        "top": { "type": "number", "minimum": 0 },
+        "right": { "type": "number", "minimum": 0 },
+        "bottom": { "type": "number", "minimum": 0 },
+        "left": { "type": "number", "minimum": 0 }
+      }
+    },
+    "tableCellStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fill": { "$ref": "#/$defs/color" },
+        "textStyle": { "$ref": "#/$defs/textStyle" },
+        "verticalAlign": { "enum": ["top", "middle", "bottom"] },
+        "padding": { "$ref": "#/$defs/tableCellPadding" },
+        "borders": { "$ref": "#/$defs/tableCellBorders" }
+      }
+    },
+    "tableCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "text"],
+      "properties": {
+        "column": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string" },
+        "columnSpan": { "type": "integer", "minimum": 1 },
+        "rowSpan": { "type": "integer", "minimum": 1 },
+        "header": { "type": "boolean" },
+        "style": { "$ref": "#/$defs/tableCellStyle" }
+      }
+    },
+    "tableRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["height", "cells"],
+      "properties": {
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "cells": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/tableCell" } }
+      }
+    },
+    "chartPointStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "color": { "$ref": "#/$defs/color" },
+        "border": { "$ref": "#/$defs/borderStyle" }
+      }
+    },
+    "nullableNumber": { "type": ["number", "null"] },
+    "chartPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "parentId": { "type": "string" },
+        "label": { "type": "string" },
+        "value": { "$ref": "#/$defs/nullableNumber" },
+        "x": { "$ref": "#/$defs/nullableNumber" },
+        "y": { "$ref": "#/$defs/nullableNumber" },
+        "size": { "$ref": "#/$defs/nullableNumber" },
+        "open": { "$ref": "#/$defs/nullableNumber" },
+        "high": { "$ref": "#/$defs/nullableNumber" },
+        "low": { "$ref": "#/$defs/nullableNumber" },
+        "close": { "$ref": "#/$defs/nullableNumber" },
+        "values": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/nullableNumber" } },
+        "style": { "$ref": "#/$defs/chartPointStyle" }
+      }
+    },
+    "chartMarker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visible", "shape", "size"],
+      "properties": {
+        "visible": { "type": "boolean" },
+        "shape": { "enum": ["circle", "square", "diamond", "triangle"] },
+        "size": { "type": "number", "minimum": 0 }
+      }
+    },
+    "chartDataLabels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visible"],
+      "properties": {
+        "visible": { "type": "boolean" },
+        "showValue": { "type": "boolean" },
+        "showCategory": { "type": "boolean" },
+        "showSeries": { "type": "boolean" },
+        "showPercent": { "type": "boolean" },
+        "position": { "type": "string" },
+        "style": { "$ref": "#/$defs/textStyle" }
+      }
+    },
+    "chartSeries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "points"],
+      "properties": {
+        "name": { "type": "string" },
+        "points": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/chartPoint" } },
+        "color": { "$ref": "#/$defs/color" },
+        "numberFormat": { "type": "string" },
+        "marker": { "$ref": "#/$defs/chartMarker" },
+        "smooth": { "type": "boolean" },
+        "line": { "$ref": "#/$defs/borderStyle" },
+        "dataLabels": { "$ref": "#/$defs/chartDataLabels" }
+      }
+    },
+    "chartPlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "series"],
+      "properties": {
+        "type": { "enum": ["bar", "line", "area", "pie", "doughnut", "radar", "scatter", "bubble", "stock", "surface", "histogram", "pareto", "boxWhisker", "waterfall", "treemap", "sunburst", "funnel", "regionMap", "unknown"] },
+        "series": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/chartSeries" } },
+        "grouping": { "enum": ["standard", "clustered", "stacked", "percentStacked"] },
+        "direction": { "enum": ["bar", "column"] },
+        "axisIds": { "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/id" } },
+        "holeSize": { "type": "number", "minimum": 0, "maximum": 90 },
+        "firstSliceAngle": { "type": "number" }
+      }
+    },
+    "chartAxis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "position", "visible"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["category", "date", "value"] },
+        "position": { "enum": ["top", "right", "bottom", "left"] },
+        "visible": { "type": "boolean" },
+        "reversed": { "type": "boolean" },
+        "title": { "type": "string" },
+        "titleStyle": { "$ref": "#/$defs/textStyle" },
+        "labelStyle": { "$ref": "#/$defs/textStyle" },
+        "numberFormat": { "type": "string" },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "majorGridlines": { "$ref": "#/$defs/borderStyle" },
+        "line": { "$ref": "#/$defs/borderStyle" }
+      }
+    },
+    "chartLegend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visible", "position"],
+      "properties": {
+        "visible": { "type": "boolean" },
+        "position": { "enum": ["top", "right", "bottom", "left", "topRight"] },
+        "overlay": { "type": "boolean" },
+        "style": { "$ref": "#/$defs/textStyle" }
+      }
+    },
+    "elementBase": {
+      "type": "object",
       "required": ["id", "type", "name", "frame", "transform", "opacity", "visible", "renderOrder"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
@@ -93,8 +299,62 @@
         "visible": { "type": "boolean" },
         "renderOrder": { "type": "integer" },
         "thickness": { "type": "number", "minimum": 0 },
-        "physics": { "$ref": "#/$defs/physics" }
+        "physics": { "$ref": "#/$defs/physics" },
+        "source": { "$ref": "#/$defs/source" },
+        "placeholder": { "$ref": "#/$defs/placeholder" }
       }
+    },
+    "textElement": {
+      "allOf": [
+        { "$ref": "#/$defs/elementBase" },
+        { "type": "object", "required": ["text", "style"], "properties": { "type": { "const": "text" }, "text": { "type": "string" }, "style": { "$ref": "#/$defs/textStyle" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "imageElement": {
+      "allOf": [
+        { "$ref": "#/$defs/elementBase" },
+        { "type": "object", "required": ["assetId", "fit"], "properties": { "type": { "const": "image" }, "assetId": { "$ref": "#/$defs/id" }, "alt": { "type": "string" }, "fit": { "enum": ["contain", "cover", "fill"] } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "shapeElement": {
+      "allOf": [
+        { "$ref": "#/$defs/elementBase" },
+        { "type": "object", "required": ["shape", "fill", "stroke", "strokeWidth"], "properties": { "type": { "const": "shape" }, "shape": { "enum": ["rectangle", "roundedRectangle", "ellipse", "line", "custom"] }, "fill": { "$ref": "#/$defs/color" }, "stroke": { "$ref": "#/$defs/color" }, "strokeWidth": { "type": "number", "minimum": 0 }, "text": { "type": "string" }, "textStyle": { "$ref": "#/$defs/textStyle" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "tableElement": {
+      "allOf": [
+        { "$ref": "#/$defs/elementBase" },
+        { "type": "object", "required": ["columns", "rows", "style"], "properties": { "type": { "const": "table" }, "columns": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "type": "number", "exclusiveMinimum": 0 } }, "rows": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/tableRow" } }, "style": { "$ref": "#/$defs/tableCellStyle" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "chartElement": {
+      "allOf": [
+        { "$ref": "#/$defs/elementBase" },
+        { "type": "object", "required": ["plots", "axes"], "properties": { "type": { "const": "chart" }, "plots": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "$ref": "#/$defs/chartPlot" } }, "axes": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/chartAxis" } }, "title": { "type": "string" }, "titleStyle": { "$ref": "#/$defs/textStyle" }, "legend": { "$ref": "#/$defs/chartLegend" }, "displayBlanksAs": { "enum": ["gap", "zero", "span"] }, "background": { "$ref": "#/$defs/color" }, "plotBackground": { "$ref": "#/$defs/color" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "unsupportedElement": {
+      "allOf": [
+        { "$ref": "#/$defs/elementBase" },
+        { "type": "object", "required": ["reason"], "properties": { "type": { "const": "unsupported" }, "reason": { "type": "string", "minLength": 1 }, "fallbackText": { "type": "string" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "element": {
+      "oneOf": [
+        { "$ref": "#/$defs/textElement" },
+        { "$ref": "#/$defs/imageElement" },
+        { "$ref": "#/$defs/shapeElement" },
+        { "$ref": "#/$defs/tableElement" },
+        { "$ref": "#/$defs/chartElement" },
+        { "$ref": "#/$defs/unsupportedElement" }
+      ]
     },
     "layout": {
       "type": "object",
@@ -106,6 +366,15 @@
         "elements": { "type": "array", "items": { "$ref": "#/$defs/element" } }
       }
     },
+    "slideTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "durationMs"],
+      "properties": {
+        "type": { "enum": ["cut", "fade", "slide"] },
+        "durationMs": { "type": "number", "minimum": 0, "maximum": 10000 }
+      }
+    },
     "slide": {
       "type": "object",
       "additionalProperties": false,
@@ -115,6 +384,7 @@
         "name": { "type": "string" },
         "layoutId": { "$ref": "#/$defs/id" },
         "durationMs": { "type": "number", "minimum": 0 },
+        "transition": { "$ref": "#/$defs/slideTransition" },
         "background": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" },
         "notes": { "type": "string" },
         "elements": { "type": "array", "items": { "$ref": "#/$defs/element" } }

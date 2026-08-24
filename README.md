@@ -1,7 +1,7 @@
 # PrismDeckJS
 
-Browser-native spatial presentations with PPTX/ODP import, editable depth,
-Three.js rendering, side-by-side stereo, and optional Rapier physics.
+Browser-native spatial presentations with PPTX/ODP import, crisp Canvas2D slide
+surfaces, Three.js depth, side-by-side stereo, and optional Rapier physics.
 
 **[Open PrismDeck Studio](https://lunarmoon26.github.io/PrismDeckJS/)**
 
@@ -15,7 +15,13 @@ protocol, package format, or application code with either project.
 - Normalize imported content into a versioned `.prismdeck` JSON and asset bundle.
 - Export one HTML file containing the editable deck and assets with Three.js playback.
 - Render one authoritative scene in mono, full SBS, or half SBS.
-- Edit per-element depth, rotation, thickness, text placeholders, and physics settings.
+- Render ordinary zero-depth slides with Canvas2D and spatial slides with Three.js.
+- Insert pictures or draw text boxes, rectangles, rounded rectangles, ellipses, and lines from Studio's top Insert menu.
+- Fill picture placeholders from local image files, move selected elements on the stage, and resize selected flat elements with corner handles.
+- Edit per-element position, size, scale, opacity/alpha, depth, rotation, thickness, text placeholders, image fit/alt text, and physics settings through grouped inspector sections.
+- Keep imported presentation surfaces planar by default; opt individual elements into extrusion.
+- Play native `cut`, `fade`, and `slide` transitions with reduced-motion fallback.
+- Treat each slide background as a scene clear color rather than occluding geometry.
 - Create a slide from an imported PowerPoint layout.
 - Report unsupported source features instead of silently dropping them.
 
@@ -33,12 +39,14 @@ const deck = await importPresentation(await file.arrayBuffer(), {
 const player = await DeckPlayer.create(canvas, deck, {
   physics: true,
   autoStart: true,
+  renderer: { overlayCanvas },
 });
 ```
 
 `DeckPlayer` advances physics once before rendering either stereo eye. Call
 `player.dispose()` to release WebGL, textures, animation frames, and Rapier WASM
-resources.
+resources. `overlayCanvas` is an optional same-size canvas positioned above the
+WebGL canvas; Studio and generated HTML provide it for crisp flat-slide output.
 
 ## Single-file HTML
 
@@ -86,6 +94,13 @@ npm run export:html -- examples/deepseek-harness/deck.json generated/deck.html
 The Dickinson College sample files are optional local compatibility inputs and
 are not redistributed by this repository. See
 [`docs/import-compatibility.md`](docs/import-compatibility.md).
+
+Studio opens with a fifteen-slide PrismDeck feature tour that exercises all nine
+layouts, the original CyberHUD Edge palette, and six Office-compatible presentation palettes. Studio chrome remains
+neutral, and theme selection never changes imported deck colors. See
+[`docs/themes.md`](docs/themes.md), [`docs/transitions.md`](docs/transitions.md), the
+[`default layouts`](docs/layouts.md), [`element contract`](docs/element-types.md), and the
+[`PPTX/ODP feature matrix`](docs/import-compatibility.md#feature-matrix).
 
 Run DeepSeek Harness from the repository root with either `dsh web` or
 `dsh --profile headless "Create a presentation about …"`. Harness loads
