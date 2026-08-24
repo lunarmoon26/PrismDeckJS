@@ -1,6 +1,6 @@
 import type { RigidBody, World } from '@dimforge/rapier3d-compat';
 import type { DeckSize, DeckSlide } from '../document/types';
-import { elementWorldTransform, type PhysicsTransform } from '../render/renderer';
+import { elementWorldBallRadius, elementWorldTransform, type PhysicsTransform } from '../render/renderer';
 
 type RapierModule = typeof import('@dimforge/rapier3d-compat');
 
@@ -70,7 +70,7 @@ export class DeckPhysics {
       const scaledHeight = world.size.height * Math.abs(element.transform.scaleY);
       const collider =
         physics.shape === 'ball'
-          ? this.rapier.ColliderDesc.ball(Math.max(0.01, Math.min(scaledWidth, scaledHeight) / 2))
+          ? this.rapier.ColliderDesc.ball(elementWorldBallRadius(element, size))
           : this.rapier.ColliderDesc.cuboid(
               Math.max(0.005, scaledWidth / 2),
               Math.max(0.005, scaledHeight / 2),

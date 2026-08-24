@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { strToU8, zipSync } from 'fflate';
@@ -258,6 +258,10 @@ test('loads exported HTML with the built browser runtime', async ({ context, pag
   await (await downloadPromise).saveAs(viewerPath);
 
   const runtime = await readFile('packages/prismdeck/dist/prism-deck.min.js');
+  const rapierChunkName = (await readdir('packages/prismdeck/dist/chunks')).find((name) => /^rapier-.*\.js$/.test(name));
+  expect(rapierChunkName).toBeTruthy();
+  const rapierRuntime = await readFile(`packages/prismdeck/dist/chunks/${rapierChunkName}`);
+  let rapierChunkRequested = false;
   const viewer = await context.newPage();
   viewer.on('console', (message) => {
     if (message.type() === 'error') viewerErrors.push(message.text());
@@ -270,10 +274,37 @@ test('loads exported HTML with the built browser runtime', async ({ context, pag
       'Content-Type': 'text/javascript; charset=utf-8',
     },
   }));
+  await viewer.route(`https://cdn.jsdelivr.net/npm/prismdeckjs@*/dist/chunks/${rapierChunkName}`, (route) => {
+    rapierChunkRequested = true;
+    return route.fulfill({
+      body: rapierRuntime,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'text/javascript; charset=utf-8',
+      },
+    });
+  });
   await viewer.goto(pathToFileURL(viewerPath).href);
   await expect(viewer.locator('.status')).toBeHidden({ timeout: 30_000 });
+  expect(rapierChunkRequested).toBe(true);
   await expect(viewer.locator('.count')).toHaveText('1 / 15');
   await expect(viewer.getByLabel('Interactive 3D presentation canvas')).toBeVisible();
+  const outputMode = viewer.getByLabel('Output mode');
+  await expect(outputMode).toHaveValue('mono');
+  await viewer.keyboard.press('2');
+  await expect(outputMode).toHaveValue('full-sbs');
+  await viewer.keyboard.press('3');
+  await expect(outputMode).toHaveValue('half-sbs');
+  await viewer.keyboard.press('1');
+  await expect(outputMode).toHaveValue('mono');
+
+  for (let index = 0; index < 8; index += 1) await viewer.getByLabel('Next slide').click();
+  await expect(viewer.locator('.count')).toHaveText('9 / 15');
+  await viewer.waitForTimeout(100);
+  const beforePhysicsStep = await viewer.locator('main').screenshot();
+  await viewer.waitForTimeout(500);
+  const afterPhysicsStep = await viewer.locator('main').screenshot();
+  expect(afterPhysicsStep.equals(beforePhysicsStep)).toBe(false);
   expect(viewerErrors).toEqual([]);
   await viewer.close();
 });

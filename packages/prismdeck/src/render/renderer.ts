@@ -15,6 +15,7 @@ import {
   PlaneGeometry,
   Raycaster,
   Scene,
+  SphereGeometry,
   SRGBColorSpace,
   Texture,
   TextureLoader,
@@ -124,6 +125,17 @@ function elementWorldSize(element: DeckElement, size: DeckSize): { width: number
     height: Math.max(0.01, element.frame.height * SLIDE_HEIGHT),
     depth: thickness <= 0 ? 0 : Math.max(MIN_THICKNESS, thickness),
   };
+}
+
+export function elementWorldBallRadius(element: DeckElement, size: DeckSize): number {
+  const worldSize = elementWorldSize(element, size);
+  return Math.max(
+    0.01,
+    Math.min(
+      worldSize.width * Math.abs(element.transform.scaleX),
+      worldSize.height * Math.abs(element.transform.scaleY),
+    ) / 2,
+  );
 }
 
 export function elementWorldTransform(element: DeckElement, size: DeckSize): PhysicsTransform & { size: { width: number; height: number; depth: number } } {
@@ -770,9 +782,17 @@ export class DeckRenderer {
   private createElementObject(element: DeckElement, deckSize: DeckSize, useCanvasOverlay: boolean): Object3D {
     const world = elementWorldTransform(element, deckSize);
     const planar = world.size.depth === 0;
+    const spherical = Boolean(
+      !planar &&
+      element.type === 'shape' &&
+      element.shape === 'ellipse' &&
+      element.physics?.shape === 'ball',
+    );
     const geometry = planar
       ? new PlaneGeometry(world.size.width, world.size.height)
-      : new BoxGeometry(world.size.width, world.size.height, world.size.depth);
+      : spherical
+        ? new SphereGeometry(elementWorldBallRadius(element, deckSize), 32, 20)
+        : new BoxGeometry(world.size.width, world.size.height, world.size.depth);
     let material: MeshStandardMaterial | MeshBasicMaterial;
     if (element.type === 'image') {
       const placeholder = canvasTextureFor({ ...element, type: 'unsupported', reason: 'Loading image', fallbackText: element.alt ?? element.name }, deckSize);
@@ -786,6 +806,14 @@ export class DeckRenderer {
             roughness: 0.72,
             metalness: 0.02,
           });
+    } else if (spherical && element.type === 'shape') {
+      material = new MeshStandardMaterial({
+        color: element.fill,
+        transparent: element.opacity < 1,
+        opacity: element.opacity,
+        roughness: 0.58,
+        metalness: 0.08,
+      });
     } else if (planar) {
       const texture = canvasTextureFor(element, deckSize);
       this.textures.add(texture);
@@ -810,7 +838,11 @@ export class DeckRenderer {
     const mesh = new Mesh(geometry, material);
     mesh.position.set(world.position.x, world.position.y, world.position.z);
     mesh.quaternion.set(world.rotation.x, world.rotation.y, world.rotation.z, world.rotation.w);
-    mesh.scale.set(element.transform.scaleX, element.transform.scaleY, 1);
+    if (spherical) {
+      mesh.scale.setScalar(1);
+    } else {
+      mesh.scale.set(element.transform.scaleX, element.transform.scaleY, 1);
+    }
     mesh.renderOrder = element.renderOrder;
     mesh.userData.elementId = element.id;
     mesh.userData.element = element;
