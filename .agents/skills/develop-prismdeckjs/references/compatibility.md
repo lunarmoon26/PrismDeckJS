@@ -2,7 +2,7 @@
 
 ## Monorepo adaptation
 
-`harness-alchemist.json` declares `packages/prismdeck` as the plugin root and
+`alchemy.json` declares `packages/prismdeck` as the plugin root and
 uses OpenCode's dedicated `./server` package export. PrismDeckJS therefore keeps
 its existing SDK at `.` while satisfying the remaining Harness Alchemist skill,
 manifest, Cordis, and npm-payload contracts.

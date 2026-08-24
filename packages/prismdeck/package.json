@@ -58,7 +58,8 @@
     ".claude-plugin/plugin.json",
     ".codex-plugin/plugin.json",
     "plugin.json",
-    "README.md"
+    "README.md",
+    "alchemy.json"
   ],
   "scripts": {
     "build": "vite build --config vite.browser.config.ts && tsc -p tsconfig.json",
