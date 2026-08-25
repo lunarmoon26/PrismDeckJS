@@ -211,7 +211,35 @@ test('loads the animated universe deck and edits planar slide content', async ({
   await expect(page.getByLabel('Thickness value')).toHaveValue('0');
   await page.getByLabel('Depth value').fill('0.24');
   await expect(page.getByLabel('Depth value')).toHaveValue('0.24');
+  expect(consoleErrors).toEqual([]);
+});
 
+test('round-trips an edited deck through HTML', async ({ page }) => {
+  test.setTimeout(60_000);
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  await page.goto('/');
+  await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
+  await page.locator('.layer-list button').nth(1).click();
+  await page.locator('.stacked-field textarea').fill('Round-trip text');
+  await page.getByLabel('Text color').fill('#010203');
+  await page.getByText('Spatial transformation').click();
+  await page.getByLabel('Depth value').fill('0.24');
+  const canvas = page.getByLabel('Interactive 3D presentation canvas');
+  await page.getByLabel('Insert element').selectOption('rectangle');
+  const bounds = await canvas.boundingBox();
+  expect(bounds).toBeTruthy();
+  await page.mouse.move(bounds!.x + bounds!.width * 0.65, bounds!.y + bounds!.height * 0.65);
+  await page.mouse.down();
+  await page.mouse.move(bounds!.x + bounds!.width * 0.78, bounds!.y + bounds!.height * 0.78);
+  await page.mouse.up();
+  await page.getByLabel('Shape fill color').fill('#334455');
+  await page.getByLabel('Shape stroke width').fill('3');
+  await page.getByLabel('Opacity / alpha value').fill('0.65');
+  await page.getByLabel('Scale X value').fill('1.1');
+  await page.getByLabel('Scene background color').fill('#123456');
   await page.getByRole('button', { name: /Add slide/ }).click();
   await expect(page.locator('.slide-card')).toHaveCount(16);
   await expect(page.locator('.slide-card__preview').last()).toHaveCSS('background-color', 'rgb(18, 52, 86)');
@@ -234,6 +262,18 @@ test('loads the animated universe deck and edits planar slide content', async ({
   await expect(page.locator('.stage-message')).toBeHidden();
   await expect(page.locator('.slide-card')).toHaveCount(16);
   await expect(page.getByLabel('Demo deck theme')).toBeDisabled();
+  await page.locator('.slide-card').first().click();
+  await page.locator('.layer-list button').nth(1).click();
+  await expect(page.locator('.stacked-field textarea')).toHaveValue('Round-trip text');
+  await expect(page.getByLabel('Text color')).toHaveValue('#010203');
+  const importedDepth = page.getByLabel('Depth value');
+  if (!(await importedDepth.isVisible())) await page.getByText('Spatial transformation').click();
+  await expect(importedDepth).toHaveValue('0.24');
+  await page.locator('.layer-list button').filter({ hasText: 'Rectangle' }).click();
+  await expect(page.getByLabel('Shape fill color')).toHaveValue('#334455');
+  await expect(page.getByLabel('Shape stroke width')).toHaveValue('3');
+  await expect(page.getByLabel('Opacity / alpha value')).toHaveValue('0.65');
+  await expect(page.getByLabel('Scale X value')).toHaveValue('1.1');
   expect(consoleErrors).toEqual([]);
 });
 
