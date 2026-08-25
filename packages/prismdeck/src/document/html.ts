@@ -105,7 +105,7 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
       const canvas = document.querySelector('canvas.webgl');
       const overlayCanvas = document.querySelector('canvas.overlay');
       const usesPhysics = deck.document.slides.some((slide) => slide.elements.some((element) => element.physics));
-      const player = await PrismDeck.DeckPlayer.create(canvas, deck, { autoStart: true, physics: usesPhysics, renderer: { overlayCanvas } });
+      const player = await PrismDeck.DeckPlayer.create(canvas, deck, { autoStart: true, physics: usesPhysics, renderer: { overlayCanvas, pixelRatio: 1 } });
       const previous = document.querySelector('[data-action="previous"]');
       const next = document.querySelector('[data-action="next"]');
       const outputMode = document.querySelector('.output-mode');

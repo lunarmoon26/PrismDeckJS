@@ -4,6 +4,7 @@ import schema from '../../schema/prismdeck.schema.json';
 import {
   DEFAULT_TEXT_STYLE,
   LEGACY_PRISMDECK_SCHEMA_VERSION,
+  LEGACY_PRISMDECK_SCHEMA_VERSIONS,
   PRISMDECK_SCHEMA_VERSION,
   type ChartAxis,
   type ChartElement,
@@ -103,7 +104,7 @@ export function migrateDeckDocument(value: unknown): DeckDocument {
     validateDeckDocument(value);
     return value;
   }
-  if (version !== LEGACY_PRISMDECK_SCHEMA_VERSION) {
+  if (!(LEGACY_PRISMDECK_SCHEMA_VERSIONS as readonly unknown[]).includes(version)) {
     throw new DeckValidationError(`Unsupported PrismDeck schema version: ${String(version)}`);
   }
 
@@ -120,10 +121,12 @@ export function migrateDeckDocument(value: unknown): DeckDocument {
       return element;
     });
   };
-  const layouts = migrated.layouts;
-  const slides = migrated.slides;
-  if (Array.isArray(layouts)) layouts.forEach(migrateElements);
-  if (Array.isArray(slides)) slides.forEach(migrateElements);
+  if (version === LEGACY_PRISMDECK_SCHEMA_VERSION) {
+    const layouts = migrated.layouts;
+    const slides = migrated.slides;
+    if (Array.isArray(layouts)) layouts.forEach(migrateElements);
+    if (Array.isArray(slides)) slides.forEach(migrateElements);
+  }
   migrated.schemaVersion = PRISMDECK_SCHEMA_VERSION;
   validateDeckDocument(migrated);
   return migrated;

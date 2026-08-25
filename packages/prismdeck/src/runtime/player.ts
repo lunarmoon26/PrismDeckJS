@@ -66,7 +66,7 @@ export class DeckPlayer {
     this.previousFrameTime = timestamp;
     this.session.tick(timestamp);
     if (this.physics) this.renderer.applyPhysicsTransforms(this.physics.step(deltaSeconds));
-    this.renderer.render();
+    this.renderer.render(timestamp);
   }
 
   load(deck: LoadedDeck): void {

@@ -10,6 +10,7 @@ import {
   type TextElement,
 } from '../src/index';
 import { chartToEChartsOption, renderChartSvg } from '../src/render/chart';
+import { slideTransitionFrame } from '../src/render/renderer';
 
 function textElement(thickness?: number): TextElement {
   return {
@@ -128,5 +129,14 @@ describe('semantic chart rendering', () => {
     expect(first.startsWith('<svg')).toBe(true);
     expect(first).toContain('Revenue');
     expect(first).not.toContain('<script');
+  });
+});
+
+describe('persistent-background slide transitions', () => {
+  test('eases only destination content for WebGL fade and slide entries', () => {
+    expect(slideTransitionFrame('fade', 0, 400, 16)).toEqual({ opacity: 0, offsetX: 0, done: false });
+    expect(slideTransitionFrame('fade', 400, 400, 16)).toEqual({ opacity: 1, offsetX: 0, done: true });
+    expect(slideTransitionFrame('slide', 0, 400, 16)).toEqual({ opacity: 0.35, offsetX: 0.96, done: false });
+    expect(slideTransitionFrame('slide', 400, 400, 16)).toEqual({ opacity: 1, offsetX: 0, done: true });
   });
 });

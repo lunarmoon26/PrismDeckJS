@@ -1,5 +1,11 @@
-export const PRISMDECK_SCHEMA_VERSION = '0.2.0' as const;
+export const PRISMDECK_SCHEMA_VERSION = '0.4.0' as const;
 export const LEGACY_PRISMDECK_SCHEMA_VERSION = '0.1.0' as const;
+export const PREVIOUS_PRISMDECK_SCHEMA_VERSION = '0.3.0' as const;
+export const LEGACY_PRISMDECK_SCHEMA_VERSIONS = [
+  LEGACY_PRISMDECK_SCHEMA_VERSION,
+  '0.2.0',
+  PREVIOUS_PRISMDECK_SCHEMA_VERSION,
+] as const;
 export const PRISMDECK_MIME_TYPE = 'application/vnd.prismdeck+zip' as const;
 
 export type SourceFormat = 'pptx' | 'odp' | 'prismdeck' | 'native';
@@ -18,6 +24,27 @@ export interface DeckSize {
   width: number;
   height: number;
 }
+
+export type SolarBodyKey = 'sol' | 'mercury' | 'venus' | 'earth' | 'luna' | 'mars' | 'jupiter' | 'saturn' | 'uranus' | 'neptune';
+export type GalaxySolarTextureKey = SolarBodyKey | 'saturnRing' | 'stars';
+
+export interface GalaxySolarSystem {
+  textureAssetIds?: Partial<Record<GalaxySolarTextureKey, string>>;
+}
+
+export interface GalaxyBackgroundScene {
+  type: 'galaxy';
+  seed: number;
+  starCount: number;
+  rotationDegreesPerSecond: number;
+  coreColor: string;
+  armColor: string;
+  solColor: string;
+  backdropAssetId?: string;
+  solarSystem?: GalaxySolarSystem;
+}
+
+export type DeckBackgroundScene = GalaxyBackgroundScene;
 
 export interface ElementFrame {
   /** Normalized from the left edge of the slide. */
@@ -304,12 +331,25 @@ export interface SlideTransition {
   durationMs: number;
 }
 
+export interface BackgroundCamera {
+  x: number;
+  y: number;
+  z: number;
+  distance?: number;
+  view?: 'top' | 'tilt' | 'horizon';
+  focusBody?: SolarBodyKey;
+  orbitAzimuthDegrees?: number;
+  orbitElevationDegrees?: number;
+  transitionDurationMs?: number;
+}
+
 export interface DeckSlide {
   id: string;
   name: string;
   layoutId?: string;
   durationMs: number;
   transition?: SlideTransition;
+  backgroundCamera?: BackgroundCamera;
   background: string;
   notes?: string;
   elements: DeckElement[];
@@ -321,6 +361,7 @@ export interface DeckDocument {
   kind: DocumentKind;
   metadata: DeckMetadata;
   size: DeckSize;
+  backgroundScene?: DeckBackgroundScene;
   layouts: DeckLayout[];
   slides: DeckSlide[];
 }

@@ -49,8 +49,8 @@ function semanticDeckArchive(): Buffer {
   }));
 }
 
-test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
-  test.setTimeout(60_000);
+test('loads the animated universe deck and edits planar slide content', async ({ page }) => {
+  test.setTimeout(90_000);
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
@@ -60,7 +60,7 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
   await expect(page.getByLabel('Interactive 3D presentation canvas')).toBeVisible();
   await expect(page.locator('.slide-card')).toHaveCount(15);
-  await expect(page.locator('.layer-list button')).toHaveCount(4);
+  await expect(page.locator('.layer-list button')).toHaveCount(5);
   await expect(page.getByLabel('Slide layout').locator('option')).toHaveText([
     'Title Slide',
     'Title and Content',
@@ -78,10 +78,14 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
     const pixels = context.getImageData(0, 0, (canvas as HTMLCanvasElement).width, (canvas as HTMLCanvasElement).height).data;
     for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 0) return true;
     return false;
-  })).toBe(false);
+  })).toBe(true);
   await expect(page.locator('.studio-shell')).not.toHaveAttribute('data-theme', /.+/);
   await expect(page.getByLabel('Demo deck theme').locator('option')).toHaveCount(7);
   await expect(page.getByLabel('Demo deck theme').locator('option')).toHaveText(['Edge', 'Office', 'Organic', 'Ion', 'Executive', 'Pastel', 'Grayscale']);
+  const galaxyViewToggle = page.getByRole('button', { name: 'Toggle galaxy view' });
+  await expect(galaxyViewToggle).toHaveText('Tilt View');
+  await galaxyViewToggle.click();
+  await expect(galaxyViewToggle).toHaveText('Top View');
   await expect(page.getByLabel('Insert element').locator('option')).toHaveText([
     'Select', 'Text box', 'Rectangle', 'Rounded rectangle', 'Ellipse', 'Line', 'Picture…',
   ]);
@@ -92,14 +96,22 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   await expect.poll(() => page.locator('.studio-shell').evaluate((element) => getComputedStyle(element).color)).toBe(chromeColor);
   await page.locator('.layer-list button').nth(1).click();
   await expect(page.locator('.stage__selection-layer polygon')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Resize bottom right' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Resize bottom right' })).toBeEnabled();
   await page.getByLabel('Text color').fill('#010203');
   await expect(page.getByLabel('Demo deck theme')).toBeEnabled();
   await page.getByLabel('Demo deck theme').selectOption('mecha');
   await expect(page.getByLabel('Demo deck theme')).toBeEnabled();
 
+  await page.locator('.stage__overlay').evaluate((canvas) => {
+    const originalAnimate = canvas.animate.bind(canvas);
+    canvas.animate = (keyframes, options) => {
+      canvas.setAttribute('data-transition-count', String(Number(canvas.getAttribute('data-transition-count') ?? 0) + 1));
+      return originalAnimate(keyframes, options);
+    };
+  });
   await page.locator('.slide-card').nth(1).click();
-  await expect.poll(() => page.getByLabel('Interactive 3D presentation canvas').evaluate((canvas) => canvas.getAnimations().some((animation) => animation.playState === 'running'))).toBe(true);
+  await expect.poll(() => page.getByLabel('Interactive 3D presentation canvas').evaluate((canvas) => canvas.getAnimations().some((animation) => animation.playState === 'running'))).toBe(false);
+  await expect(page.locator('.stage__overlay')).toHaveAttribute('data-transition-count', '1');
   await expect.poll(() => page.locator('.stage__overlay').evaluate((canvas) => {
     const context = (canvas as HTMLCanvasElement).getContext('2d');
     if (!context) return false;
@@ -110,7 +122,7 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   const capturePromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Capture PNG' }).click();
   const capture = await capturePromise;
-  expect(capture.suggestedFilename()).toBe('Import-locally-mono.png');
+  expect(capture.suggestedFilename()).toBe('A-ladder-of-scale-mono.png');
   await page.locator('.slide-card').first().click();
 
   await page.getByLabel('Scene background color').fill('#123456');
@@ -137,12 +149,12 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   await page.mouse.down();
   await page.mouse.move(bounds!.x + 8, bounds!.y + 8);
   await page.mouse.up();
-  await expect(page.locator('.layer-list button')).toHaveCount(4);
+  await expect(page.locator('.layer-list button')).toHaveCount(5);
   await page.mouse.move(bounds!.x + bounds!.width * 0.58, bounds!.y + bounds!.height * 0.3);
   await page.mouse.down();
   await page.mouse.move(bounds!.x + bounds!.width * 0.76, bounds!.y + bounds!.height * 0.5);
   await page.mouse.up();
-  await expect(page.locator('.layer-list button')).toHaveCount(5);
+  await expect(page.locator('.layer-list button')).toHaveCount(6);
   const moveBefore = await page.locator('.stage__selection-layer polygon').boundingBox();
   expect(moveBefore).toBeTruthy();
   await page.mouse.move(moveBefore!.x + moveBefore!.width / 2, moveBefore!.y + moveBefore!.height / 2);
@@ -182,7 +194,7 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   await page.mouse.down();
   await page.mouse.move(textBounds!.x + textBounds!.width * 0.48, textBounds!.y + textBounds!.height * 0.78);
   await page.mouse.up();
-  await expect(page.locator('.layer-list button')).toHaveCount(6);
+  await expect(page.locator('.layer-list button')).toHaveCount(7);
   await page.locator('.stacked-field textarea').fill('Canvas text');
   await page.getByLabel('Text size').fill('32');
   await expect(page.getByLabel('Text size')).toHaveValue('32');
@@ -200,27 +212,6 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   await page.getByLabel('Depth value').fill('0.24');
   await expect(page.getByLabel('Depth value')).toHaveValue('0.24');
 
-  await page.getByRole('button', { name: 'Full SBS' }).click();
-  await expect(page.getByRole('button', { name: 'Full SBS' })).toHaveClass(/is-active/);
-  await expect(page.getByLabel('Output geometry')).toHaveText('3840 × 1080 · 1920 × 1080 / eye');
-  await expect(page.locator('.stage-toolbar').getByLabel('Insert element')).toBeVisible();
-  await page.getByLabel('SBS depth scale').focus();
-  await page.keyboard.press('End');
-  await expect(page.getByText('1.50×')).toBeVisible();
-  await page.locator('.slide-card').nth(1).click();
-  await expect.poll(() => page.locator('.stage__overlay').evaluate((canvas) => {
-    const overlay = canvas as HTMLCanvasElement;
-    const context = overlay.getContext('2d');
-    if (!context) return [false, false];
-    const half = Math.floor(overlay.width / 2);
-    const hasPixels = (x: number, width: number) => {
-      const pixels = context.getImageData(x, 0, width, overlay.height).data;
-      for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 0) return true;
-      return false;
-    };
-    return [hasPixels(0, half), hasPixels(half, overlay.width - half)];
-  })).toEqual([true, true]);
-  await page.locator('.slide-card').first().click();
   await page.getByRole('button', { name: /Add slide/ }).click();
   await expect(page.locator('.slide-card')).toHaveCount(16);
   await expect(page.locator('.slide-card__preview').last()).toHaveCSS('background-color', 'rgb(18, 52, 86)');
@@ -230,7 +221,7 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   await page.getByRole('button', { name: 'Export HTML' }).click();
   const download = await downloadPromise;
   const downloadPath = await download.path();
-  expect(download.suggestedFilename()).toBe('PrismDeckJS-Spatial-Runtime.html');
+  expect(download.suggestedFilename()).toBe('Our-Universe.html');
   expect(downloadPath).toBeTruthy();
   const html = await readFile(downloadPath!, 'utf8');
   expect(html).toContain('type="application/vnd.prismdeck+zip;base64"');
@@ -246,8 +237,21 @@ test('loads the WebGL Studio and edits a spatial slide', async ({ page }) => {
   expect(consoleErrors).toEqual([]);
 });
 
-test('loads exported HTML with the built browser runtime', async ({ context, page }, testInfo) => {
-  test.setTimeout(60_000);
+test('loads the animated universe deck on mobile', { tag: ['@mobile', '@mobile-only'] }, async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  await page.goto('/');
+  await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
+  await expect(page.getByLabel('Interactive 3D presentation canvas')).toBeVisible();
+  await expect(page.locator('.slide-card')).toHaveCount(15);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('loads exported HTML with the built browser runtime', { tag: '@mobile' }, async ({ context, page }, testInfo) => {
+  test.setTimeout(90_000);
   const viewerErrors: string[] = [];
   await page.goto('/');
   await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
@@ -286,7 +290,7 @@ test('loads exported HTML with the built browser runtime', async ({ context, pag
   });
   await viewer.goto(pathToFileURL(viewerPath).href);
   await expect(viewer.locator('.status')).toBeHidden({ timeout: 30_000 });
-  expect(rapierChunkRequested).toBe(true);
+  expect(rapierChunkRequested).toBe(false);
   await expect(viewer.locator('.count')).toHaveText('1 / 15');
   await expect(viewer.getByLabel('Interactive 3D presentation canvas')).toBeVisible();
   const outputMode = viewer.getByLabel('Output mode');
@@ -301,12 +305,83 @@ test('loads exported HTML with the built browser runtime', async ({ context, pag
   for (let index = 0; index < 8; index += 1) await viewer.getByLabel('Next slide').click();
   await expect(viewer.locator('.count')).toHaveText('9 / 15');
   await viewer.waitForTimeout(100);
-  const beforePhysicsStep = await viewer.locator('main').screenshot();
+  const beforeGalaxyStep = await viewer.locator('main').screenshot();
   await viewer.waitForTimeout(500);
-  const afterPhysicsStep = await viewer.locator('main').screenshot();
-  expect(afterPhysicsStep.equals(beforePhysicsStep)).toBe(false);
+  const afterGalaxyStep = await viewer.locator('main').screenshot();
+  expect(afterGalaxyStep.equals(beforeGalaxyStep)).toBe(false);
   expect(viewerErrors).toEqual([]);
   await viewer.close();
+});
+
+test('keeps focused background bodies near convergence in both SBS modes', { tag: '@mobile' }, async ({ page }) => {
+  test.setTimeout(60_000);
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  await page.goto('/');
+  await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
+  await page.getByLabel('SBS depth scale').focus();
+  await page.keyboard.press('End');
+  await expect(page.getByText('1.50×')).toBeVisible();
+  await page.locator('.slide-card').nth(9).click();
+  await page.waitForTimeout(1_700);
+  const canvas = page.getByLabel('Interactive 3D presentation canvas');
+  const outputGeometry = {
+    'Full SBS': '3840 × 1080 · 1920 × 1080 / eye',
+    'Half SBS': '1920 × 1080 · 960 × 1080 / eye',
+  } as const;
+
+  for (const mode of ['Full SBS', 'Half SBS'] as const) {
+    await page.getByRole('button', { name: mode, exact: true }).click();
+    await expect(page.getByRole('button', { name: mode, exact: true })).toHaveClass(/is-active/);
+    await expect(page.getByLabel('Output geometry')).toHaveText(outputGeometry[mode]);
+    await expect(page.locator('.stage-toolbar').getByLabel('Insert element')).toBeVisible();
+    await page.waitForTimeout(200);
+    await expect.poll(() => page.locator('.stage__overlay').evaluate((overlay) => {
+      const context = (overlay as HTMLCanvasElement).getContext('2d');
+      if (!context) return [false, false];
+      const half = Math.floor((overlay as HTMLCanvasElement).width / 2);
+      const hasPixels = (x: number, width: number) => {
+        const pixels = context.getImageData(x, 0, width, (overlay as HTMLCanvasElement).height).data;
+        for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 0) return true;
+        return false;
+      };
+      return [hasPixels(0, half), hasPixels(half, (overlay as HTMLCanvasElement).width - half)];
+    })).toEqual([true, true]);
+    const base64 = (await canvas.screenshot()).toString('base64');
+    const warmPixels = await page.evaluate(async (encoded) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${encoded}`;
+      await image.decode();
+      const sample = document.createElement('canvas');
+      sample.width = image.width;
+      sample.height = image.height;
+      const context = sample.getContext('2d')!;
+      context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+      return [0.25, 0.75].map((center) => {
+        const left = Math.floor(sample.width * (center - 0.06));
+        const right = Math.ceil(sample.width * (center + 0.06));
+        const top = Math.floor(sample.height * 0.38);
+        const bottom = Math.ceil(sample.height * 0.62);
+        let count = 0;
+        for (let y = top; y < bottom; y += 1) {
+          for (let x = left; x < right; x += 1) {
+            const offset = (y * sample.width + x) * 4;
+            const red = pixels[offset]!;
+            const green = pixels[offset + 1]!;
+            const blue = pixels[offset + 2]!;
+            if (red > 45 && green > 20 && red > green * 1.05 && red > blue * 1.35) count += 1;
+          }
+        }
+        return count;
+      });
+    }, base64);
+    expect(warmPixels[0]).toBeGreaterThan(100);
+    expect(warmPixels[1]).toBeGreaterThan(100);
+  }
+  expect(consoleErrors).toEqual([]);
 });
 
 test('renders semantic chart and table surfaces without browser errors', async ({ page }) => {
@@ -383,6 +458,7 @@ test('fills and edits a picture placeholder from the inspector', async ({ page }
 });
 
 test('creates slides from the standard PowerPoint layout catalog', async ({ page }) => {
+  test.setTimeout(60_000);
   await page.goto('/');
   await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
   const layouts = [

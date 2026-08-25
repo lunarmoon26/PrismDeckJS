@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://prismdeckjs.dev/schema/prismdeck-0.2.0.json",
+  "$id": "https://prismdeckjs.dev/schema/prismdeck-0.4.0.json",
   "title": "PrismDeck document",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "kind", "metadata", "size", "layouts", "slides"],
   "properties": {
-    "schemaVersion": { "const": "0.2.0" },
+    "schemaVersion": { "const": "0.4.0" },
     "id": { "$ref": "#/$defs/id" },
     "kind": { "enum": ["presentation", "template"] },
     "metadata": {
@@ -23,12 +23,55 @@
       }
     },
     "size": { "$ref": "#/$defs/size" },
+    "backgroundScene": { "$ref": "#/$defs/backgroundScene" },
     "layouts": { "type": "array", "items": { "$ref": "#/$defs/layout" } },
     "slides": { "type": "array", "items": { "$ref": "#/$defs/slide" } }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "slides": {
+            "contains": {
+              "type": "object",
+              "required": ["backgroundCamera"]
+            }
+          }
+        },
+        "required": ["slides"]
+      },
+      "then": { "required": ["backgroundScene"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "slides": {
+            "contains": {
+              "type": "object",
+              "required": ["backgroundCamera"],
+              "properties": {
+                "backgroundCamera": { "type": "object", "required": ["focusBody"] }
+              }
+            }
+          }
+        },
+        "required": ["slides"]
+      },
+      "then": {
+        "required": ["backgroundScene"],
+        "properties": {
+          "backgroundScene": {
+            "type": "object",
+            "required": ["solarSystem"]
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "id": { "type": "string", "minLength": 1, "maxLength": 200 },
     "color": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "galaxyColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
     "size": {
       "type": "object",
       "additionalProperties": false,
@@ -36,6 +79,52 @@
       "properties": {
         "width": { "type": "number", "exclusiveMinimum": 0 },
         "height": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "backgroundScene": {
+      "oneOf": [
+        { "$ref": "#/$defs/galaxyBackgroundScene" }
+      ]
+    },
+    "galaxyBackgroundScene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "seed", "starCount", "rotationDegreesPerSecond", "coreColor", "armColor", "solColor"],
+      "properties": {
+        "type": { "const": "galaxy" },
+        "seed": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "starCount": { "type": "integer", "minimum": 1000, "maximum": 20000 },
+        "rotationDegreesPerSecond": { "type": "number", "minimum": -10, "maximum": 10 },
+        "coreColor": { "$ref": "#/$defs/galaxyColor" },
+        "armColor": { "$ref": "#/$defs/galaxyColor" },
+        "solColor": { "$ref": "#/$defs/galaxyColor" },
+        "backdropAssetId": { "$ref": "#/$defs/id" },
+        "solarSystem": { "$ref": "#/$defs/galaxySolarSystem" }
+      }
+    },
+    "galaxySolarSystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "textureAssetIds": { "$ref": "#/$defs/galaxySolarTextureAssetIds" }
+      }
+    },
+    "galaxySolarTextureAssetIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sol": { "$ref": "#/$defs/id" },
+        "mercury": { "$ref": "#/$defs/id" },
+        "venus": { "$ref": "#/$defs/id" },
+        "earth": { "$ref": "#/$defs/id" },
+        "luna": { "$ref": "#/$defs/id" },
+        "mars": { "$ref": "#/$defs/id" },
+        "jupiter": { "$ref": "#/$defs/id" },
+        "saturn": { "$ref": "#/$defs/id" },
+        "uranus": { "$ref": "#/$defs/id" },
+        "neptune": { "$ref": "#/$defs/id" },
+        "saturnRing": { "$ref": "#/$defs/id" },
+        "stars": { "$ref": "#/$defs/id" }
       }
     },
     "frame": {
@@ -375,6 +464,43 @@
         "durationMs": { "type": "number", "minimum": 0, "maximum": 10000 }
       }
     },
+    "backgroundCamera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "allOf": [
+        {
+          "if": {
+            "required": ["view"],
+            "properties": { "view": { "const": "horizon" } }
+          },
+          "then": { "required": ["focusBody"] }
+        },
+        {
+          "if": {
+            "anyOf": [
+              { "required": ["orbitAzimuthDegrees"] },
+              { "required": ["orbitElevationDegrees"] }
+            ]
+          },
+          "then": {
+            "required": ["view", "focusBody"],
+            "properties": { "view": { "const": "horizon" } }
+          }
+        }
+      ],
+      "properties": {
+        "x": { "type": "number", "minimum": -20, "maximum": 20 },
+        "y": { "type": "number", "minimum": -20, "maximum": 20 },
+        "z": { "type": "number", "minimum": -10, "maximum": 10 },
+        "distance": { "type": "number", "minimum": 0.16, "maximum": 100 },
+        "view": { "enum": ["top", "tilt", "horizon"] },
+        "focusBody": { "enum": ["sol", "mercury", "venus", "earth", "luna", "mars", "jupiter", "saturn", "uranus", "neptune"] },
+        "orbitAzimuthDegrees": { "type": "number", "minimum": -180, "maximum": 180 },
+        "orbitElevationDegrees": { "type": "number", "minimum": -78, "maximum": 78 },
+        "transitionDurationMs": { "type": "number", "minimum": 0, "maximum": 10000 }
+      }
+    },
     "slide": {
       "type": "object",
       "additionalProperties": false,
@@ -385,6 +511,7 @@
         "layoutId": { "$ref": "#/$defs/id" },
         "durationMs": { "type": "number", "minimum": 0 },
         "transition": { "$ref": "#/$defs/slideTransition" },
+        "backgroundCamera": { "$ref": "#/$defs/backgroundCamera" },
         "background": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" },
         "notes": { "type": "string" },
         "elements": { "type": "array", "items": { "$ref": "#/$defs/element" } }

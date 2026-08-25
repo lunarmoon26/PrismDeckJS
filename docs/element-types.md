@@ -29,9 +29,12 @@ Table cells identify their starting column and optional row/column spans. Merged
 continuation cells are not stored. Column widths and row heights are relative
 weights, so a table remains editable and scales with its element frame.
 
-Version `0.2.0` owns these exact chart and table shapes. Package boundaries
+Version `0.2.0` introduced these exact chart and table shapes. Package boundaries
 migrate `0.1.0` category/series charts and string-matrix tables into the semantic
-model before validation; newly saved packages always use `0.2.0`.
+model before validation. Version `0.3.0` adds the optional background scene and
+version `0.4.0` adds bounded solar-system assets plus top/tilt and body-focus
+camera framing. Newly saved packages always use `0.4.0`; `0.1.0` through `0.3.0`
+packages advance without changing their slide content.
 
 ## Planar and extruded elements
 
@@ -57,3 +60,39 @@ independent from extrusion and can still separate planar layers.
 layer. It therefore cannot cover elements at negative depth. Studio can edit the
 current slide's scene color, and a newly created slide inherits the current
 slide's background unless the caller provides an explicit color.
+
+`DeckDocument.backgroundScene` optionally adds one deck-scoped spatial layer
+behind every slide. The `galaxy` scene accepts only bounded declarative values:
+`seed`, `starCount`, `rotationDegreesPerSecond`, `coreColor`, `armColor`, and
+`solColor`. `backdropAssetId` may reference one inert packaged image; it is not a
+URL. An optional solar system accepts fixed asset-ID slots for body, Saturn-ring,
+and inward-facing star-sphere textures. The scene persists across slide
+navigation, advances from the player frame clock, renders through the same mono
+or stereo cameras, and is recreated only when the deck or scene configuration
+changes. It never contains shader source, module URLs, callbacks, or other
+executable input.
+
+The galaxy runtime derives its internal Milky Way structures, spectral stellar
+populations, thick-disk depth, haze, and particle flow from those bounded values.
+`rotationDegreesPerSecond` controls flow direction and tempo, retaining the
+originating CyberHUD setting name; it does not rotate the whole background.
+The star and haze raster ranges, spectral weights, exposure, and shader bloom
+approximation use CyberHUD's default Galaxy configuration.
+
+`DeckSlide.backgroundCamera` contains bounded `x`, `y`, and `z` translations plus
+an optional `transitionDurationMs`. Solar-system scenes also accept a bounded
+focus distance, `top`, `tilt`, or `horizon` view, a body focus key, and bounded
+focus-orbit azimuth/elevation. Declaring a body focus requires
+`backgroundScene.solarSystem`; declaring any background camera requires a
+background scene. Focus-orbit angles are valid only for a focused `horizon`
+camera. Horizon focus places the camera in the ecliptic plane relative to the
+body-to-Sol direction rather than reusing the Galactic top/tilt camera. The
+renderer moves only the persistent scene with the inverse camera transform, so
+slide elements remain fixed unless their own slide transition animates them.
+Missing camera values resolve to the neutral overview; reduced-motion
+preferences apply a new camera immediately.
+
+Planar slides use the Canvas2D overlay so fade and slide entry transitions affect
+their content without interrupting the background. Slides that require WebGL
+content apply the same entry transition to the active slide group rather than
+transforming the entire canvas.

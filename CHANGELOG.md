@@ -22,6 +22,18 @@
   migration, classic PPTX combination charts, packaged ODF charts, merged and
   styled tables, deterministic ECharts SVG surfaces, and accessible HTML data
   tables.
+- Added schema `0.3.0` deck-scoped declarative backgrounds, automatic `0.2.0`
+  package migration, and a deterministic CyberHUD-derived Milky Way scene that
+  remains continuous behind slide transitions.
+- Added per-slide galaxy camera translations, CyberHUD-default particle raster
+  sizing, and an attributed packaged NASA/JPL Milky Way backdrop for the Studio
+  universe demo.
+- Added schema `0.4.0` solar-system backgrounds with packaged planet and sky
+  textures, isolated solar lighting, a J2000 ecliptic frame, body-focus zooms,
+  and CyberHUD-style top/tilt/horizon camera transitions.
+- Added a CyberHUD-calibrated distance-aware stereo rig for persistent
+  backgrounds so close planet focus remains comfortable and independently
+  converged from authored slide UI in full and half SBS.
 
 ## 0.1.0 - 2026-08-22
 
