@@ -237,7 +237,20 @@ test('loads the animated universe deck and edits planar slide content', async ({
   expect(consoleErrors).toEqual([]);
 });
 
-test('loads exported HTML with the built browser runtime', async ({ context, page }, testInfo) => {
+test('loads the animated universe deck on mobile', { tag: ['@mobile', '@mobile-only'] }, async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  await page.goto('/');
+  await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
+  await expect(page.getByLabel('Interactive 3D presentation canvas')).toBeVisible();
+  await expect(page.locator('.slide-card')).toHaveCount(15);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('loads exported HTML with the built browser runtime', { tag: '@mobile' }, async ({ context, page }, testInfo) => {
   test.setTimeout(90_000);
   const viewerErrors: string[] = [];
   await page.goto('/');
@@ -300,7 +313,7 @@ test('loads exported HTML with the built browser runtime', async ({ context, pag
   await viewer.close();
 });
 
-test('keeps focused background bodies near convergence in both SBS modes', async ({ page }) => {
+test('keeps focused background bodies near convergence in both SBS modes', { tag: '@mobile' }, async ({ page }) => {
   test.setTimeout(60_000);
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
