@@ -49,7 +49,7 @@ function semanticDeckArchive(): Buffer {
   }));
 }
 
-test('loads the animated universe deck and edits planar slide content', async ({ page }) => {
+test('loads the animated universe deck and exercises studio controls', async ({ page }) => {
   test.setTimeout(90_000);
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
@@ -124,7 +124,18 @@ test('loads the animated universe deck and edits planar slide content', async ({
   const capture = await capturePromise;
   expect(capture.suggestedFilename()).toBe('A-ladder-of-scale-mono.png');
   await page.locator('.slide-card').first().click();
+  await expect(page.locator('.slide-card').first()).toHaveClass(/is-active/);
+  expect(consoleErrors).toEqual([]);
+});
 
+test('edits planar slide geometry and spatial properties', async ({ page }) => {
+  test.setTimeout(60_000);
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  await page.goto('/');
+  await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
   await page.getByLabel('Scene background color').fill('#123456');
   await expect(page.locator('.slide-card__preview').first()).toHaveCSS('background-color', 'rgb(18, 52, 86)');
   await expect(page.getByLabel('Demo deck theme')).toBeEnabled();
