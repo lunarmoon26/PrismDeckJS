@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,6 +28,7 @@ jobs:
       - run: npm run check
 
   browser:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -40,8 +42,7 @@ jobs:
       - run: npm run test:e2e
 
   pages-build:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: [check, browser]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       pages: write
@@ -61,7 +62,7 @@ jobs:
           path: apps/studio/dist
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: pages-build
     permissions:
       pages: write
