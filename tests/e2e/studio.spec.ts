@@ -212,27 +212,6 @@ test('loads the animated universe deck and edits planar slide content', async ({
   await page.getByLabel('Depth value').fill('0.24');
   await expect(page.getByLabel('Depth value')).toHaveValue('0.24');
 
-  await page.getByRole('button', { name: 'Full SBS' }).click();
-  await expect(page.getByRole('button', { name: 'Full SBS' })).toHaveClass(/is-active/);
-  await expect(page.getByLabel('Output geometry')).toHaveText('3840 × 1080 · 1920 × 1080 / eye');
-  await expect(page.locator('.stage-toolbar').getByLabel('Insert element')).toBeVisible();
-  await page.getByLabel('SBS depth scale').focus();
-  await page.keyboard.press('End');
-  await expect(page.getByText('1.50×')).toBeVisible();
-  await page.locator('.slide-card').nth(1).click();
-  await expect.poll(() => page.locator('.stage__overlay').evaluate((canvas) => {
-    const overlay = canvas as HTMLCanvasElement;
-    const context = overlay.getContext('2d');
-    if (!context) return [false, false];
-    const half = Math.floor(overlay.width / 2);
-    const hasPixels = (x: number, width: number) => {
-      const pixels = context.getImageData(x, 0, width, overlay.height).data;
-      for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 0) return true;
-      return false;
-    };
-    return [hasPixels(0, half), hasPixels(half, overlay.width - half)];
-  })).toEqual([true, true]);
-  await page.locator('.slide-card').first().click();
   await page.getByRole('button', { name: /Add slide/ }).click();
   await expect(page.locator('.slide-card')).toHaveCount(16);
   await expect(page.locator('.slide-card__preview').last()).toHaveCSS('background-color', 'rgb(18, 52, 86)');
@@ -329,13 +308,34 @@ test('keeps focused background bodies near convergence in both SBS modes', async
   });
   await page.goto('/');
   await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
+  await page.getByLabel('SBS depth scale').focus();
+  await page.keyboard.press('End');
+  await expect(page.getByText('1.50×')).toBeVisible();
   await page.locator('.slide-card').nth(9).click();
   await page.waitForTimeout(1_700);
   const canvas = page.getByLabel('Interactive 3D presentation canvas');
+  const outputGeometry = {
+    'Full SBS': '3840 × 1080 · 1920 × 1080 / eye',
+    'Half SBS': '1920 × 1080 · 960 × 1080 / eye',
+  } as const;
 
-  for (const mode of ['Full SBS', 'Half SBS']) {
+  for (const mode of ['Full SBS', 'Half SBS'] as const) {
     await page.getByRole('button', { name: mode, exact: true }).click();
+    await expect(page.getByRole('button', { name: mode, exact: true })).toHaveClass(/is-active/);
+    await expect(page.getByLabel('Output geometry')).toHaveText(outputGeometry[mode]);
+    await expect(page.locator('.stage-toolbar').getByLabel('Insert element')).toBeVisible();
     await page.waitForTimeout(200);
+    await expect.poll(() => page.locator('.stage__overlay').evaluate((overlay) => {
+      const context = (overlay as HTMLCanvasElement).getContext('2d');
+      if (!context) return [false, false];
+      const half = Math.floor((overlay as HTMLCanvasElement).width / 2);
+      const hasPixels = (x: number, width: number) => {
+        const pixels = context.getImageData(x, 0, width, (overlay as HTMLCanvasElement).height).data;
+        for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 0) return true;
+        return false;
+      };
+      return [hasPixels(0, half), hasPixels(half, (overlay as HTMLCanvasElement).width - half)];
+    })).toEqual([true, true]);
     const base64 = (await canvas.screenshot()).toString('base64');
     const warmPixels = await page.evaluate(async (encoded) => {
       const image = new Image();
