@@ -2,6 +2,7 @@ import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
 import {
   configureStereoCameraRig,
+  logarithmicStereoEyeSeparationRatio,
   OUTPUT_PRESETS,
   pinholeScale,
   projectPinholePoint,
@@ -16,6 +17,9 @@ describe('stereo camera rig', () => {
     expect(scaledStereoEyeSeparationRatio(0.04, 0)).toBe(0);
     expect(scaledStereoEyeSeparationRatio(0.04, 1)).toBe(0.04);
     expect(scaledStereoEyeSeparationRatio(0.04, 1.5)).toBe(0.06);
+    expect(logarithmicStereoEyeSeparationRatio(0.16, 0.16, 100, 0.024, 0.04)).toBeCloseTo(0.024);
+    expect(logarithmicStereoEyeSeparationRatio(100, 0.16, 100, 0.024, 0.04)).toBeCloseTo(0.04);
+    expect(logarithmicStereoEyeSeparationRatio(0.68, 0.16, 100, 0.024, 0.04)).toBeLessThan(0.03);
   });
 
   test('keeps the convergence plane centered for both parallel cameras', () => {
@@ -35,6 +39,27 @@ describe('stereo camera rig', () => {
     expect(new Vector3(0, 0, 0).project(right).x).toBeCloseTo(0, 8);
     expect(left.position.x).toBeCloseTo(-0.1);
     expect(right.position.x).toBeCloseTo(0.1);
+  });
+
+  test('uses the focused background distance without moving the slide rig', () => {
+    const left = new PerspectiveCamera();
+    const right = new PerspectiveCamera();
+    const sceneDistance = 0.68;
+    const ratio = logarithmicStereoEyeSeparationRatio(sceneDistance, 0.16, 100, 0.024, 0.04);
+    configureStereoCameraRig(left, right, {
+      fovDegrees: 40,
+      near: 0.1,
+      far: 200,
+      distance: 15,
+      convergenceDistance: sceneDistance,
+      eyeSeparation: sceneDistance * ratio,
+      aspect: 16 / 9,
+    });
+
+    const target = new Vector3(0, 0, 15 - sceneDistance);
+    expect(target.clone().project(left).x).toBeCloseTo(0, 8);
+    expect(target.clone().project(right).x).toBeCloseTo(0, 8);
+    expect(right.position.x - left.position.x).toBeLessThan(0.021);
   });
 
   test('declares exact full and half SBS output geometry', () => {

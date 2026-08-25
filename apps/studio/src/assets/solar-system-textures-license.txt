@@ -1,0 +1,12 @@
+Solar System Scope planet, Moon, Sun, Saturn-ring, and Milky Way star maps
+
+Source: https://www.solarsystemscope.com/textures/
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+License text: https://creativecommons.org/licenses/by/4.0/
+
+The maps are derived from textures published by Solar System Scope and based on
+NASA imagery data. CyberHUD resized overview maps for its Galaxy Web Applet and
+retains source-sized detail maps. PrismDeckJS converted overview and star maps to WebP and
+uses 1024 x 512 WebP derivatives for Sol, Earth, Luna, Jupiter, and Saturn hero
+views plus a 2048 x 1024 solar-sky map. No endorsement by Solar System Scope or
+NASA is implied.

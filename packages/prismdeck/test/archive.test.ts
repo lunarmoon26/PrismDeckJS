@@ -22,6 +22,17 @@ function fixture(): LoadedDeck {
       kind: 'presentation',
       metadata: { title: 'Archive test', sourceFormat: 'native' },
       size: { width: 1600, height: 900 },
+      backgroundScene: {
+        type: 'galaxy',
+        seed: 815,
+        starCount: 1_000,
+        rotationDegreesPerSecond: -0.55,
+        coreColor: '#FFE0B8',
+        armColor: '#6CCBFF',
+         solColor: '#FFF2A8',
+         backdropAssetId: 'pixel',
+         solarSystem: { textureAssetIds: { earth: 'pixel' } },
+      },
       layouts: [],
       slides: [
         {
@@ -29,6 +40,17 @@ function fixture(): LoadedDeck {
            name: 'Slide 1',
            durationMs: 5_000,
            transition: { type: 'fade', durationMs: 350 },
+           backgroundCamera: {
+             x: 2,
+             y: -1,
+             z: 0,
+             distance: 0.8,
+             view: 'horizon',
+             focusBody: 'earth',
+             orbitAzimuthDegrees: 32,
+             orbitElevationDegrees: 0,
+             transitionDurationMs: 900,
+           },
            background: '#FFFFFF',
           elements: [
             {
@@ -168,6 +190,45 @@ describe('.prismdeck archive', () => {
     });
   });
 
+  test('advances persisted 0.2.0 documents without changing slide content', async () => {
+    const previousDocument = JSON.parse(JSON.stringify(fixture().document)) as Record<string, unknown>;
+    previousDocument.schemaVersion = '0.2.0';
+    delete previousDocument.backgroundScene;
+    const slides = previousDocument.slides as Array<Record<string, unknown>>;
+    delete slides[0]!.backgroundCamera;
+    const manifest = { format: 'prismdeck', packageVersion: '0.2.0', document: 'deck.json', assets: [] };
+    const loaded = await loadPrismDeck(zipSync({
+      'manifest.json': strToU8(JSON.stringify(manifest)),
+      'deck.json': strToU8(JSON.stringify(previousDocument)),
+    }));
+
+    expect(loaded.document.schemaVersion).toBe(PRISMDECK_SCHEMA_VERSION);
+    expect(loaded.document.backgroundScene).toBeUndefined();
+    expect(loaded.document.slides).toEqual(previousDocument.slides);
+  });
+
+  test('advances persisted 0.3.0 galaxy documents without changing slide content', async () => {
+    const previousDocument = JSON.parse(JSON.stringify(fixture().document)) as Record<string, unknown>;
+    previousDocument.schemaVersion = '0.3.0';
+    const backgroundScene = previousDocument.backgroundScene as Record<string, unknown>;
+    delete backgroundScene.solarSystem;
+    const slides = previousDocument.slides as Array<{ backgroundCamera?: Record<string, unknown> }>;
+    delete slides[0]!.backgroundCamera!.distance;
+    delete slides[0]!.backgroundCamera!.view;
+    delete slides[0]!.backgroundCamera!.focusBody;
+    delete slides[0]!.backgroundCamera!.orbitAzimuthDegrees;
+    delete slides[0]!.backgroundCamera!.orbitElevationDegrees;
+    const manifest = { format: 'prismdeck', packageVersion: '0.3.0', document: 'deck.json', assets: [] };
+    const loaded = await loadPrismDeck(zipSync({
+      'manifest.json': strToU8(JSON.stringify(manifest)),
+      'deck.json': strToU8(JSON.stringify(previousDocument)),
+    }));
+
+    expect(loaded.document.schemaVersion).toBe(PRISMDECK_SCHEMA_VERSION);
+    expect(loaded.document.backgroundScene?.solarSystem).toBeUndefined();
+    expect(loaded.document.slides).toEqual(previousDocument.slides);
+  });
+
   test('rejects table cells that exceed the normalized grid', () => {
     const invalid = fixture().document;
     const table = invalid.slides[0]?.elements.find((element) => element.type === 'table');
@@ -180,6 +241,67 @@ describe('.prismdeck archive', () => {
     const table = invalid.slides[0]?.elements.find((element) => element.type === 'table');
     if (table?.type === 'table') table.rows[1]!.cells[1]!.column = 0;
     expect(() => validateDeckDocument(invalid)).toThrow(/overlapping cells/);
+  });
+
+  test('rejects executable fields in a declarative background scene', () => {
+    const invalid = fixture().document as unknown as { backgroundScene: Record<string, unknown> };
+    invalid.backgroundScene.fragmentShader = 'void main() {}';
+    expect(() => validateDeckDocument(invalid)).toThrow('Invalid PrismDeck document');
+  });
+
+  test('rejects unsupported galaxy color syntax before rendering', () => {
+    const invalid = fixture().document;
+    invalid.backgroundScene!.armColor = 'not-a-color';
+    expect(() => validateDeckDocument(invalid)).toThrow('Invalid PrismDeck document');
+  });
+
+  test('rejects background cameras outside the bounded scene range', () => {
+    const invalid = fixture().document;
+    invalid.slides[0]!.backgroundCamera!.x = 21;
+    expect(() => validateDeckDocument(invalid)).toThrow('Invalid PrismDeck document');
+
+    const invalidOrbit = fixture().document;
+    invalidOrbit.slides[0]!.backgroundCamera!.orbitElevationDegrees = 79;
+    expect(() => validateDeckDocument(invalidOrbit)).toThrow('Invalid PrismDeck document');
+  });
+
+  test('rejects unknown solar focus and texture keys', () => {
+    const invalidFocus = fixture().document as unknown as { slides: Array<{ backgroundCamera: Record<string, unknown> }> };
+    invalidFocus.slides[0]!.backgroundCamera.focusBody = 'pluto';
+    expect(() => validateDeckDocument(invalidFocus)).toThrow('Invalid PrismDeck document');
+
+    const invalidTexture = fixture().document as unknown as { backgroundScene: { solarSystem: { textureAssetIds: Record<string, unknown> } } };
+    invalidTexture.backgroundScene.solarSystem.textureAssetIds.pluto = 'pixel';
+    expect(() => validateDeckDocument(invalidTexture)).toThrow('Invalid PrismDeck document');
+  });
+
+  test('requires a solar system when a slide focuses a solar body', () => {
+    const invalid = fixture().document;
+    delete invalid.backgroundScene!.solarSystem;
+
+    expect(() => validateDeckDocument(invalid)).toThrow('Invalid PrismDeck document');
+  });
+
+  test('requires a background scene when a slide declares a background camera', () => {
+    const invalid = fixture().document;
+    invalid.slides[0]!.backgroundCamera = { x: 0, y: 0, z: 0, view: 'top' };
+    delete invalid.backgroundScene;
+
+    expect(() => validateDeckDocument(invalid)).toThrow('Invalid PrismDeck document');
+  });
+
+  test('requires a focused body for an ecliptic-horizon camera', () => {
+    const invalid = fixture().document;
+    delete invalid.slides[0]!.backgroundCamera!.focusBody;
+
+    expect(() => validateDeckDocument(invalid)).toThrow('Invalid PrismDeck document');
+  });
+
+  test('rejects focus-orbit angles outside an ecliptic-horizon camera', () => {
+    const invalid = fixture().document;
+    invalid.slides[0]!.backgroundCamera!.view = 'tilt';
+
+    expect(() => validateDeckDocument(invalid)).toThrow('Invalid PrismDeck document');
   });
 });
 

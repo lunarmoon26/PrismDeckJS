@@ -56,6 +56,30 @@ export function scaledStereoEyeSeparationRatio(baseRatio: number, depthScale = 1
   return Math.min(MAX_STEREO_EYE_SEPARATION_RATIO, baseRatio * normalizedScale);
 }
 
+export function logarithmicStereoEyeSeparationRatio(
+  sceneDistance: number,
+  minimumSceneDistance: number,
+  maximumSceneDistance: number,
+  minimumRatio: number,
+  maximumRatio: number,
+  depthScale = 1,
+): number {
+  if (!Number.isFinite(sceneDistance) || sceneDistance <= 0) throw new RangeError('sceneDistance must be positive');
+  if (!Number.isFinite(minimumSceneDistance) || minimumSceneDistance <= 0) {
+    throw new RangeError('minimumSceneDistance must be positive');
+  }
+  if (!Number.isFinite(maximumSceneDistance) || maximumSceneDistance < minimumSceneDistance) {
+    throw new RangeError('maximumSceneDistance must not be less than minimumSceneDistance');
+  }
+  if (!Number.isFinite(minimumRatio) || minimumRatio < 0 || !Number.isFinite(maximumRatio) || maximumRatio < minimumRatio) {
+    throw new RangeError('stereo ratios must be finite and increasing');
+  }
+  const distance = Math.max(minimumSceneDistance, Math.min(maximumSceneDistance, sceneDistance));
+  const range = Math.log(maximumSceneDistance / minimumSceneDistance);
+  const progress = range === 0 ? 0 : Math.log(distance / minimumSceneDistance) / range;
+  return scaledStereoEyeSeparationRatio(minimumRatio + (maximumRatio - minimumRatio) * progress, depthScale);
+}
+
 function configureEye(
   camera: PerspectiveCamera,
   eyeOffset: number,

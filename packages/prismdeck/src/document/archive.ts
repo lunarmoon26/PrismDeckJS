@@ -1,7 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type UnzipFileInfo } from 'fflate';
 import {
   PRISMDECK_MIME_TYPE,
-  LEGACY_PRISMDECK_SCHEMA_VERSION,
+  LEGACY_PRISMDECK_SCHEMA_VERSIONS,
   PRISMDECK_SCHEMA_VERSION,
   type DeckAsset,
   type DeckPackageManifest,
@@ -108,7 +108,10 @@ export async function loadPrismDeck(
   const manifest = parseJson<Omit<DeckPackageManifest, 'packageVersion'> & { packageVersion: string }>(files, 'manifest.json');
   if (
     manifest.format !== 'prismdeck' ||
-    (manifest.packageVersion !== PRISMDECK_SCHEMA_VERSION && manifest.packageVersion !== LEGACY_PRISMDECK_SCHEMA_VERSION)
+    (
+      manifest.packageVersion !== PRISMDECK_SCHEMA_VERSION &&
+      !(LEGACY_PRISMDECK_SCHEMA_VERSIONS as readonly string[]).includes(manifest.packageVersion)
+    )
   ) {
     throw new Error(`Unsupported PrismDeck package version: ${String(manifest.packageVersion)}`);
   }

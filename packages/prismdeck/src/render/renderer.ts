@@ -28,10 +28,12 @@ import {
   DEFAULT_TEXT_STYLE,
   type BorderStyle,
   type ChartElement,
+  type DeckBackgroundScene,
   type DeckElement,
   type DeckSize,
   type ElementFrame,
   type ImageElement,
+  type GalaxySolarTextureKey,
   type ShapeElement,
   type SlideTransition,
   type TableCellStyle,
@@ -39,10 +41,16 @@ import {
   type TextStyle,
 } from '../document/types';
 import { PresentationSession, type SessionChangeDetail } from '../runtime/session';
+import {
+  backgroundSceneSignature,
+  createBackgroundScene,
+  type BackgroundSceneRuntime,
+} from './background';
 import { renderChartSvg } from './chart';
 import {
   configureStereoCameraRig,
   DEFAULT_STEREO_EYE_SEPARATION_RATIO,
+  logarithmicStereoEyeSeparationRatio,
   OUTPUT_PRESETS,
   scaledStereoEyeSeparationRatio,
   type OutputMode,
@@ -94,8 +102,118 @@ interface CanvasOverlayEntry {
   renderOrder: number;
 }
 
+interface WebGLSlideTransition {
+  type: 'fade' | 'slide';
+  startTimeMs: number;
+  durationMs: number;
+  startPositionX: number;
+  materials: Map<Material, { opacity: number; transparent: boolean }>;
+}
+
+export interface SlideTransitionFrame {
+  opacity: number;
+  offsetX: number;
+  done: boolean;
+}
+
 const SLIDE_HEIGHT = 10;
 const MIN_THICKNESS = 0.025;
+const MAX_BACKGROUND_IMAGE_BYTES = 16 * 1024 * 1024;
+const MAX_BACKGROUND_IMAGE_DIMENSION = 8_192;
+const MAX_BACKGROUND_IMAGE_PIXELS = 32_000_000;
+const MAX_BACKGROUND_TOTAL_IMAGE_BYTES = 32 * 1024 * 1024;
+const MAX_BACKGROUND_TOTAL_IMAGE_PIXELS = 64_000_000;
+const MAX_CONCURRENT_BACKGROUND_IMAGE_DECODES = 3;
+const MIN_BACKGROUND_STEREO_SCENE_DISTANCE = 0.16;
+const MAX_BACKGROUND_STEREO_SCENE_DISTANCE = 100;
+const MIN_BACKGROUND_STEREO_EYE_SEPARATION_RATIO = 0.024;
+const MAX_BACKGROUND_STEREO_EYE_SEPARATION_RATIO = 0.04;
+
+export function slideTransitionFrame(
+  type: 'fade' | 'slide',
+  elapsedMs: number,
+  durationMs: number,
+  slideWidth: number,
+): SlideTransitionFrame {
+  const progress = durationMs <= 0 ? 1 : Math.max(0, Math.min(1, elapsedMs / durationMs));
+  const eased = progress * progress * (3 - 2 * progress);
+  return {
+    opacity: type === 'fade' ? eased : 0.35 + eased * 0.65,
+    offsetX: type === 'slide' ? (1 - eased) * slideWidth * 0.06 : 0,
+    done: progress >= 1,
+  };
+}
+
+function bytesMatch(data: Uint8Array, offset: number, expected: readonly number[]): boolean {
+  return expected.every((value, index) => data[offset + index] === value);
+}
+
+function jpegDimensions(data: Uint8Array): { width: number; height: number } | undefined {
+  if (!bytesMatch(data, 0, [0xff, 0xd8])) return undefined;
+  let offset = 2;
+  const startOfFrameMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+  while (offset + 8 < data.length) {
+    if (data[offset] !== 0xff) return undefined;
+    while (data[offset] === 0xff) offset += 1;
+    const marker = data[offset++]!;
+    if (marker === 0xd8 || marker === 0x01) continue;
+    if (marker === 0xd9 || marker === 0xda || offset + 2 > data.length) return undefined;
+    const length = (data[offset]! << 8) | data[offset + 1]!;
+    if (length < 2 || offset + length > data.length) return undefined;
+    if (startOfFrameMarkers.has(marker) && length >= 7) {
+      return {
+        height: (data[offset + 3]! << 8) | data[offset + 4]!,
+        width: (data[offset + 5]! << 8) | data[offset + 6]!,
+      };
+    }
+    offset += length;
+  }
+  return undefined;
+}
+
+function backgroundImageDimensions(data: Uint8Array, mimeType: string): { width: number; height: number } | undefined {
+  if (data.byteLength === 0 || data.byteLength > MAX_BACKGROUND_IMAGE_BYTES) return undefined;
+  if (mimeType === 'image/png' && data.length >= 24 && bytesMatch(data, 0, [137, 80, 78, 71, 13, 10, 26, 10])) {
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    return { width: view.getUint32(16), height: view.getUint32(20) };
+  }
+  if (mimeType === 'image/jpeg') return jpegDimensions(data);
+  if (mimeType !== 'image/webp' || data.length < 30 || !bytesMatch(data, 0, [82, 73, 70, 70]) || !bytesMatch(data, 8, [87, 69, 66, 80])) {
+    return undefined;
+  }
+  const chunk = String.fromCharCode(data[12]!, data[13]!, data[14]!, data[15]!);
+  if (chunk === 'VP8X') {
+    return {
+      width: 1 + data[24]! + (data[25]! << 8) + (data[26]! << 16),
+      height: 1 + data[27]! + (data[28]! << 8) + (data[29]! << 16),
+    };
+  }
+  if (chunk === 'VP8 ' && bytesMatch(data, 23, [0x9d, 0x01, 0x2a])) {
+    return {
+      width: (data[26]! | (data[27]! << 8)) & 0x3fff,
+      height: (data[28]! | (data[29]! << 8)) & 0x3fff,
+    };
+  }
+  if (chunk === 'VP8L' && data[20] === 0x2f) {
+    return {
+      width: 1 + data[21]! + ((data[22]! & 0x3f) << 8),
+      height: 1 + (data[22]! >> 6) + (data[23]! << 2) + ((data[24]! & 0x0f) << 10),
+    };
+  }
+  return undefined;
+}
+
+function isSafeBackgroundImage(data: Uint8Array, mimeType: string): boolean {
+  const dimensions = backgroundImageDimensions(data, mimeType);
+  return Boolean(
+    dimensions &&
+    dimensions.width > 0 &&
+    dimensions.height > 0 &&
+    dimensions.width <= MAX_BACKGROUND_IMAGE_DIMENSION &&
+    dimensions.height <= MAX_BACKGROUND_IMAGE_DIMENSION &&
+    dimensions.width * dimensions.height <= MAX_BACKGROUND_IMAGE_PIXELS,
+  );
+}
 
 export function outputViewport(mode: OutputMode, width: number, height: number): OutputViewport {
   const canvasWidth = Math.max(1, width);
@@ -447,11 +565,22 @@ export class DeckRenderer {
   readonly rightCamera = new PerspectiveCamera();
   readonly renderer: WebGLRenderer;
   readonly overlayCanvas?: HTMLCanvasElement;
+  private readonly backgroundRenderScene = new Scene();
+  private readonly backgroundCamera = new PerspectiveCamera();
+  private readonly backgroundLeftCamera = new PerspectiveCamera();
+  private readonly backgroundRightCamera = new PerspectiveCamera();
   private readonly slideGroup = new Group();
+  private backgroundScene?: BackgroundSceneRuntime;
+  private backgroundSceneSignature = '';
+  private backgroundCameraSignature = '';
+  private backgroundGeneration = 0;
+  private readonly cancelBackgroundAssetLoads = new Set<() => void>();
   private readonly elementObjects = new Map<string, Object3D>();
   private readonly textures = new Set<Texture>();
   private readonly materials = new Set<Material>();
   private readonly pendingSurfaceLoads = new Set<Promise<void>>();
+  private activeBackgroundImageDecodes = 0;
+  private readonly backgroundImageDecodeWaiters: Array<() => void> = [];
   private readonly raycaster = new Raycaster();
   private readonly pointer = new Vector2();
   private readonly slidePlane = new Plane(new Vector3(0, 0, 1), 0);
@@ -469,11 +598,13 @@ export class DeckRenderer {
   private stereoDepthScale: number;
   private cameraDistance = 15;
   private activeDeckSize?: DeckSize;
+  private slideUsesCanvasOverlay = false;
   private activeTransitions: Animation[] = [];
+  private activeWebGLTransition?: WebGLSlideTransition;
   private sessionChangeListener = (event: Event) => {
     const detail = (event as CustomEvent<SessionChangeDetail>).detail;
     if (detail.reason === 'slide' || detail.reason === 'deck' || detail.reason === 'content') {
-      this.rebuild();
+      this.rebuild(detail.reason === 'deck', detail.reason === 'slide');
       if (detail.reason === 'slide') this.playSlideTransition(this.session?.currentSlide?.transition);
     }
   };
@@ -503,7 +634,7 @@ export class DeckRenderer {
     this.detach();
     this.session = session;
     session.addEventListener('change', this.sessionChangeListener);
-    this.rebuild();
+    this.rebuild(true, false);
   }
 
   detach(): void {
@@ -511,6 +642,7 @@ export class DeckRenderer {
     this.session?.removeEventListener('change', this.sessionChangeListener);
     this.session = undefined;
     this.clearSlide();
+    this.clearBackgroundScene();
   }
 
   setOutputMode(mode: OutputMode): void {
@@ -552,26 +684,40 @@ export class DeckRenderer {
     this.resize(preset.width, preset.height, false);
   }
 
-  render(): void {
+  render(timestamp = performance.now()): void {
     if (this.disposed) return;
+    this.updateWebGLSlideTransition(timestamp);
+    const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    this.backgroundScene?.update(reducedMotion ? 0 : timestamp / 1_000);
+    this.configureBackgroundCameras();
     this.renderer.setScissorTest(false);
     this.renderer.setViewport(0, 0, this.width, this.height);
     this.renderer.clear(true, true, true);
     if (this.outputMode === 'mono') {
-      this.renderer.render(this.scene, this.camera);
+      this.renderEye(this.backgroundCamera, this.camera);
     } else {
       const viewport = outputViewport(this.outputMode, this.width, this.height);
       const eyeWidth = Math.floor(viewport.width / 2);
       this.renderer.setScissorTest(true);
       this.renderer.setViewport(viewport.x, viewport.y, eyeWidth, viewport.height);
       this.renderer.setScissor(viewport.x, viewport.y, eyeWidth, viewport.height);
-      this.renderer.render(this.scene, this.leftCamera);
+      this.renderEye(this.backgroundLeftCamera, this.leftCamera);
       this.renderer.setViewport(viewport.x + eyeWidth, viewport.y, viewport.width - eyeWidth, viewport.height);
       this.renderer.setScissor(viewport.x + eyeWidth, viewport.y, viewport.width - eyeWidth, viewport.height);
-      this.renderer.render(this.scene, this.rightCamera);
+      this.renderEye(this.backgroundRightCamera, this.rightCamera);
       this.renderer.setScissorTest(false);
     }
+    this.backgroundScene?.setRenderEyeOffset(0);
     this.renderCanvasOverlay();
+  }
+
+  private renderEye(backgroundCamera: PerspectiveCamera, slideCamera: PerspectiveCamera): void {
+    if (this.backgroundScene) {
+      this.backgroundScene.setRenderEyeOffset(backgroundCamera.position.x);
+      this.renderer.render(this.backgroundRenderScene, backgroundCamera);
+      this.renderer.clearDepth();
+    }
+    this.renderer.render(this.scene, slideCamera);
   }
 
   pick(clientX: number, clientY: number): string | undefined {
@@ -726,19 +872,33 @@ export class DeckRenderer {
     }
   }
 
-  rebuild(): void {
+  rebuild(replaceBackground = false, animateBackgroundCamera = false): void {
     if (this.disposed) return;
     this.cancelSlideTransition();
     this.clearSlide();
     const slide = this.session?.currentSlide;
     const document = this.session?.document;
-    if (!slide || !document) return;
+    if (!document) return;
+    const backgroundReplaced = this.syncBackgroundScene(document.backgroundScene, document.size, replaceBackground);
+    if (!slide) return;
+    const cameraSignature = JSON.stringify(slide.backgroundCamera ?? null);
+    const cameraChanged = cameraSignature !== this.backgroundCameraSignature;
+    if (this.backgroundScene && (backgroundReplaced || animateBackgroundCamera || cameraChanged)) {
+      const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      const animatesCamera = animateBackgroundCamera || (!backgroundReplaced && cameraChanged);
+      const durationMs = animatesCamera && !reducedMotion
+        ? slide.backgroundCamera?.transitionDurationMs ?? slide.transition?.durationMs ?? 0
+        : 0;
+      this.backgroundScene.setCamera(slide.backgroundCamera, durationMs / 1_000);
+    }
+    this.backgroundCameraSignature = cameraSignature;
     this.activeDeckSize = document.size;
     this.renderer.setClearColor(new Color(slide.background.slice(0, 7)), 1);
     const generation = this.generation;
     const useCanvasOverlay = Boolean(
       this.overlayContext && slide.elements.filter((element) => element.visible).every(canRenderSlideWithCanvasOverlay),
     );
+    this.slideUsesCanvasOverlay = useCanvasOverlay;
 
     for (const element of slide.elements) {
       if (!element.visible) continue;
@@ -878,7 +1038,8 @@ export class DeckRenderer {
         return;
       }
       const oldMaterial = object.material as Material;
-      const opacity = oldMaterial.opacity;
+      const element = object.userData.element as DeckElement | undefined;
+      const opacity = element?.opacity ?? oldMaterial.opacity;
       const canvasOverlay = object.userData.canvasOverlay === true;
       const material = object.geometry instanceof PlaneGeometry
         ? new MeshBasicMaterial({ map: texture, transparent: true, opacity, side: DoubleSide })
@@ -886,7 +1047,6 @@ export class DeckRenderer {
       if (canvasOverlay) {
         material.colorWrite = false;
         material.depthWrite = false;
-        const element = object.userData.element as DeckElement | undefined;
         if (element?.type === 'image' && texture.image instanceof HTMLImageElement && this.activeDeckSize) {
           const entry = this.overlayEntries.find((candidate) => candidate.object === object);
           if (entry) entry.source = imageCanvas(element, this.activeDeckSize, texture.image);
@@ -947,6 +1107,13 @@ export class DeckRenderer {
     const distanceForWidth = slideWidth / 2 / (Math.tan(verticalFov / 2) * logicalAspect);
     this.cameraDistance = Math.max(distanceForHeight, distanceForWidth) * 1.02 + 1;
     this.configureCameras();
+    const viewportHeight = this.outputMode === 'mono'
+      ? this.height
+      : outputViewport(this.outputMode, this.width, this.height).height;
+    this.backgroundScene?.setRenderCamera(
+      viewportHeight * this.renderer.getPixelRatio() * this.camera.projectionMatrix.elements[5]! * 0.5,
+      this.cameraDistance,
+    );
   }
 
   private playSlideTransition(transition: SlideTransition | undefined): void {
@@ -959,7 +1126,21 @@ export class DeckRenderer {
           { opacity: 0.35, transform: 'translate3d(6%, 0, 0)' },
           { opacity: 1, transform: 'translate3d(0, 0, 0)' },
         ];
-    const targets = this.overlayCanvas ? [this.canvas, this.overlayCanvas] : [this.canvas];
+    if (this.backgroundScene && !this.slideUsesCanvasOverlay) {
+      this.activeWebGLTransition = {
+        type: transition.type,
+        startTimeMs: performance.now(),
+        durationMs: transition.durationMs,
+        startPositionX: this.slideGroup.position.x,
+        materials: new Map(),
+      };
+      this.updateWebGLSlideTransition(this.activeWebGLTransition.startTimeMs);
+      return;
+    }
+    const targets = this.backgroundScene
+      ? this.overlayCanvas ? [this.overlayCanvas] : []
+      : this.overlayCanvas ? [this.canvas, this.overlayCanvas] : [this.canvas];
+    if (targets.length === 0) return;
     this.activeTransitions = targets.map((target) => target.animate(keyframes, {
       duration: transition.durationMs,
       easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
@@ -976,6 +1157,173 @@ export class DeckRenderer {
   private cancelSlideTransition(): void {
     for (const animation of this.activeTransitions) animation.cancel();
     this.activeTransitions = [];
+    this.finishWebGLSlideTransition();
+  }
+
+  private updateWebGLSlideTransition(timestamp: number): void {
+    const transition = this.activeWebGLTransition;
+    const size = this.activeDeckSize;
+    if (!transition || !size) return;
+    const slideWidth = SLIDE_HEIGHT * (size.width / size.height);
+    const frame = slideTransitionFrame(transition.type, timestamp - transition.startTimeMs, transition.durationMs, slideWidth);
+    this.slideGroup.position.x = transition.startPositionX + frame.offsetX;
+    for (const object of this.elementObjects.values()) {
+      const element = object.userData.element as DeckElement | undefined;
+      object.traverse((child) => {
+        if (!(child instanceof Mesh)) return;
+        const childMaterials = Array.isArray(child.material) ? child.material : [child.material];
+        for (const material of childMaterials) {
+          let original = transition.materials.get(material);
+          if (!original) {
+            original = { opacity: element?.opacity ?? material.opacity, transparent: material.transparent };
+            transition.materials.set(material, original);
+          }
+          const transparent = original.transparent || frame.opacity < 1;
+          if (material.transparent !== transparent) {
+            material.transparent = transparent;
+            material.needsUpdate = true;
+          }
+          material.opacity = original.opacity * frame.opacity;
+        }
+      });
+    }
+    if (frame.done) this.finishWebGLSlideTransition();
+  }
+
+  private finishWebGLSlideTransition(): void {
+    const transition = this.activeWebGLTransition;
+    if (!transition) return;
+    this.slideGroup.position.x = transition.startPositionX;
+    for (const [material, original] of transition.materials) {
+      if (material.transparent !== original.transparent) {
+        material.transparent = original.transparent;
+        material.needsUpdate = true;
+      }
+      material.opacity = original.opacity;
+    }
+    this.activeWebGLTransition = undefined;
+  }
+
+  private syncBackgroundScene(scene: DeckBackgroundScene | undefined, size: DeckSize, replace: boolean): boolean {
+    const signature = backgroundSceneSignature(scene, size);
+    if (!replace && signature === this.backgroundSceneSignature) return false;
+    this.clearBackgroundScene();
+    if (!scene) return true;
+    this.backgroundScene = createBackgroundScene(scene, size);
+    this.backgroundSceneSignature = signature;
+    this.backgroundRenderScene.add(this.backgroundScene.object);
+    let totalImageBytes = 0;
+    let totalImagePixels = 0;
+    const runtime = this.backgroundScene;
+    const scheduleAsset = (assetId: string, apply: (image: HTMLImageElement) => void): void => {
+      const asset = this.session?.assets.get(assetId);
+      if (!asset || !isSafeBackgroundImage(asset.data, asset.mimeType)) return;
+      const dimensions = backgroundImageDimensions(asset.data, asset.mimeType)!;
+      const nextBytes = totalImageBytes + asset.data.byteLength;
+      const nextPixels = totalImagePixels + dimensions.width * dimensions.height;
+      if (nextBytes > MAX_BACKGROUND_TOTAL_IMAGE_BYTES || nextPixels > MAX_BACKGROUND_TOTAL_IMAGE_PIXELS) return;
+      totalImageBytes = nextBytes;
+      totalImagePixels = nextPixels;
+      const pending = this.loadBackgroundAsset(assetId, this.backgroundGeneration, runtime, apply);
+      this.pendingSurfaceLoads.add(pending);
+      void pending.finally(() => this.pendingSurfaceLoads.delete(pending));
+    };
+    if (scene.backdropAssetId) {
+      scheduleAsset(
+        scene.backdropAssetId,
+        (image) => runtime.setBackdrop(image),
+      );
+    }
+    for (const [key, assetId] of Object.entries(scene.solarSystem?.textureAssetIds ?? {})) {
+      if (!assetId) continue;
+      scheduleAsset(
+        assetId,
+        (image) => runtime.setSolarTexture(key as GalaxySolarTextureKey, image),
+      );
+    }
+    return true;
+  }
+
+  private clearBackgroundScene(): void {
+    this.backgroundGeneration += 1;
+    for (const cancel of this.cancelBackgroundAssetLoads) cancel();
+    this.cancelBackgroundAssetLoads.clear();
+    if (this.backgroundScene) {
+      this.backgroundRenderScene.remove(this.backgroundScene.object);
+      this.backgroundScene.dispose();
+    }
+    this.backgroundScene = undefined;
+    this.backgroundSceneSignature = '';
+    this.backgroundCameraSignature = '';
+  }
+
+  private async loadBackgroundAsset(
+    assetId: string,
+    generation: number,
+    runtime: BackgroundSceneRuntime,
+    apply: (image: HTMLImageElement) => void,
+  ): Promise<void> {
+    const asset = this.session?.assets.get(assetId);
+    if (!asset || !isSafeBackgroundImage(asset.data, asset.mimeType)) return;
+    await this.acquireBackgroundImageDecode();
+    let url: string | undefined;
+    let cancelLoad: (() => void) | undefined;
+    try {
+      if (this.disposed || generation !== this.backgroundGeneration || runtime !== this.backgroundScene) return;
+      const objectUrl = URL.createObjectURL(new Blob([Uint8Array.from(asset.data)], { type: asset.mimeType }));
+      url = objectUrl;
+      const image = new Image();
+      image.decoding = 'async';
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        image.onload = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        image.onerror = () => {
+          if (settled) return;
+          settled = true;
+          reject(new Error(`Unable to render background asset ${assetId}`));
+        };
+        cancelLoad = () => {
+          if (settled) return;
+          settled = true;
+          image.onload = null;
+          image.onerror = null;
+          image.src = '';
+          resolve();
+        };
+        this.cancelBackgroundAssetLoads.add(cancelLoad);
+        image.src = objectUrl;
+      });
+      if (this.disposed || generation !== this.backgroundGeneration || runtime !== this.backgroundScene) return;
+      apply(image);
+    } catch {
+      // Keep the procedural galaxy visible when its optional backdrop cannot decode.
+    } finally {
+      if (cancelLoad) this.cancelBackgroundAssetLoads.delete(cancelLoad);
+      if (url) URL.revokeObjectURL(url);
+      this.releaseBackgroundImageDecode();
+    }
+  }
+
+  private acquireBackgroundImageDecode(): Promise<void> {
+    if (this.activeBackgroundImageDecodes < MAX_CONCURRENT_BACKGROUND_IMAGE_DECODES) {
+      this.activeBackgroundImageDecodes += 1;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.backgroundImageDecodeWaiters.push(() => {
+        this.activeBackgroundImageDecodes += 1;
+        resolve();
+      });
+    });
+  }
+
+  private releaseBackgroundImageDecode(): void {
+    this.activeBackgroundImageDecodes = Math.max(0, this.activeBackgroundImageDecodes - 1);
+    this.backgroundImageDecodeWaiters.shift()?.();
   }
 
   private renderCanvasOverlay(): void {
@@ -1068,11 +1416,43 @@ export class DeckRenderer {
       ),
       aspect: OUTPUT_PRESETS[this.outputMode].logicalEyeAspect,
     });
+    this.configureBackgroundCameras();
+  }
+
+  private configureBackgroundCameras(): void {
+    const actualAspect = this.width / this.height;
+    this.backgroundCamera.fov = this.fovDegrees;
+    this.backgroundCamera.aspect = this.outputMode === 'mono' ? actualAspect : OUTPUT_PRESETS[this.outputMode].logicalEyeAspect;
+    this.backgroundCamera.near = 0.1;
+    this.backgroundCamera.far = 200;
+    this.backgroundCamera.position.set(0, 0, this.cameraDistance);
+    this.backgroundCamera.quaternion.identity();
+    this.backgroundCamera.updateProjectionMatrix();
+    this.backgroundCamera.updateMatrixWorld(true);
+    const sceneDistance = this.backgroundScene?.stereoSceneDistance() ?? this.cameraDistance;
+    const ratio = logarithmicStereoEyeSeparationRatio(
+      sceneDistance,
+      MIN_BACKGROUND_STEREO_SCENE_DISTANCE,
+      MAX_BACKGROUND_STEREO_SCENE_DISTANCE,
+      MIN_BACKGROUND_STEREO_EYE_SEPARATION_RATIO,
+      MAX_BACKGROUND_STEREO_EYE_SEPARATION_RATIO,
+      this.stereoDepthScale,
+    );
+    configureStereoCameraRig(this.backgroundLeftCamera, this.backgroundRightCamera, {
+      fovDegrees: this.fovDegrees,
+      near: 0.1,
+      far: 200,
+      distance: this.cameraDistance,
+      convergenceDistance: sceneDistance,
+      eyeSeparation: sceneDistance * ratio,
+      aspect: OUTPUT_PRESETS[this.outputMode].logicalEyeAspect,
+    });
   }
 
   private clearSlide(): void {
     this.generation += 1;
     this.activeDeckSize = undefined;
+    this.slideUsesCanvasOverlay = false;
     for (const child of [...this.slideGroup.children]) {
       this.slideGroup.remove(child);
       child.traverse((object) => {

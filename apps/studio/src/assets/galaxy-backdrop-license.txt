@@ -1,0 +1,14 @@
+Galaxy backdrop - NASA/JPL-Caltech/R. Hurt (SSC/Caltech)
+
+Bundled derivative: galaxy-backdrop.webp
+Local source: CyberHUD/WebApplets/Galaxy/Assets/Galaxy_backdrop_alpha.png
+Source page: https://science.nasa.gov/resource/the-milky-way-galaxy/
+Direct source: https://assets.science.nasa.gov/dynamicimage/assets/science/psd/solar/2023/09/s/ssc2008-10b1.jpg?w=5600&h=5600&fit=clip&crop=faces%2Cfocalpoint
+Credit: NASA/JPL-Caltech/R. Hurt (SSC/Caltech)
+
+This file records attribution and source, not a license grant. Distribution must
+follow the current JPL Image Use Policy:
+https://www.jpl.nasa.gov/jpl-image-use-policy/
+
+Do not use NASA, JPL, or Caltech names, marks, or imagery to claim or imply
+endorsement.

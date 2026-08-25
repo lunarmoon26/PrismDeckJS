@@ -460,10 +460,10 @@ export function App() {
       }
     };
 
-    void DeckPlayer.create(canvas, createDemoDeck(deckThemeId), {
-      physics: true,
-      renderer: { outputMode: 'mono', antialias: true, clearColor: '#151311', overlayCanvas },
-    })
+    void createDemoDeck(deckThemeId)
+      .then((deck) => DeckPlayer.create(canvas, deck, {
+        renderer: { outputMode: 'mono', antialias: true, clearColor: '#151311', overlayCanvas, pixelRatio: 1 },
+      }))
       .then((created) => {
         if (!active) {
           created.dispose();
@@ -737,6 +737,17 @@ export function App() {
     const next = Math.max(0, Math.min(1.5, value));
     setStereoDepthScaleState(next);
     player?.renderer.setStereoDepthScale(next);
+  }
+
+  function toggleGalaxyView(): void {
+    if (!session?.currentSlide || session.document.backgroundScene?.type !== 'galaxy') return;
+    const camera = session.currentSlide.backgroundCamera ?? { x: 0, y: 0, z: 0 };
+    session.currentSlide.backgroundCamera = {
+      ...camera,
+      view: camera.view === 'tilt' ? 'top' : 'tilt',
+      transitionDurationMs: 1_100,
+    };
+    session.notifyContentChanged();
   }
 
   function chooseDrawingTool(tool: DrawingTool): void {
@@ -1172,6 +1183,16 @@ export function App() {
               </div>
             </div>
             <div className="stage-toolbar__meta">
+              {deckDocument?.backgroundScene?.type === 'galaxy' && (
+                <button
+                  type="button"
+                  aria-label="Toggle galaxy view"
+                  title="Rotate only the persistent galaxy between top and tilted views"
+                  onClick={toggleGalaxyView}
+                >
+                  {currentSlide?.backgroundCamera?.view === 'tilt' ? 'Top View' : 'Tilt View'}
+                </button>
+              )}
               <label className="theme-picker">
                 <span>Deck theme</span>
                 <select
