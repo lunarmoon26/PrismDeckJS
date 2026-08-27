@@ -11,7 +11,10 @@ npm run dev          # builds core, then studio Vite dev server
 npm run export:html -- input.json output.html  # validate DeckDocument JSON and create editable viewer
 ```
 
-CI (Node 24) runs `npm run check` plus e2e with chromium. There is **no lint/formatter config** — `check` is the only gate.
+Run `npm run check` and `npm run test:e2e` locally before opening a PR. GitHub
+Actions builds GitHub Pages on `main` and builds the package for release without
+running automated tests. There is **no lint/formatter config** — `check` is the
+only full local gate.
 
 ## Workspace layout
 

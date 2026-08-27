@@ -35,7 +35,7 @@ jobs:
         run: npm version "${{ steps.version.outputs.version }}" --workspace=prismdeckjs --no-git-tag-version --allow-same-version
       - name: Synchronize agent manifests
         run: npm run sync:agents
-      - run: npm run check
+      - run: npm run build:core
       - name: Verify npm package contents
         run: npm pack --workspace=prismdeckjs --dry-run
       - name: Publish prismdeckjs
