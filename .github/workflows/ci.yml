@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -14,33 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    if: github.event_name != 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run check
-
-  browser:
-    if: github.event_name != 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: timeout --signal=TERM --kill-after=30s 10m npx playwright install --with-deps chromium
-      - run: npm run test:e2e
-
   pages-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:

@@ -75,6 +75,30 @@ OpenCode discovers skills separately from npm plugins. Copy
 workflow is not already installed. Restart OpenCode after changing plugin or
 skill configuration.
 
+### Skills CLI
+
+The Skills CLI discovers PrismDeckJS's repository-contained skills directly.
+Install the deck-authoring workflow into the current OpenCode project with either
+package manager:
+
+```bash
+npx skills add lunarmoon26/PrismDeckJS --skill prismdeckjs --agent opencode --yes
+bunx skills add lunarmoon26/PrismDeckJS --skill prismdeckjs --agent opencode --yes
+```
+
+Some host projects contain an npm `overrides` conflict that prevents `npx` from
+starting any package before Skills CLI can inspect this repository. That is a
+host npm configuration error, not a PrismDeckJS skill-discovery failure. Isolate
+only the CLI's installation prefix while preserving the current project as the
+skill destination:
+
+```bash
+skills_prefix="${TMPDIR:-/tmp}/prismdeckjs-skills"
+mkdir -p "$skills_prefix"
+npm exec --prefix "$skills_prefix" --yes --package=skills -- \
+  skills add lunarmoon26/PrismDeckJS --skill prismdeckjs --agent opencode --yes
+```
+
 ## Google Antigravity
 
 ```bash
