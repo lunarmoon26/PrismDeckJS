@@ -1,3 +1,12 @@
+/* Orbitron is bundled under the SIL Open Font License 1.1; see assets/orbitron-OFL.txt. */
+@font-face {
+  font-family: 'Orbitron';
+  src: url('./assets/orbitron-variable.ttf') format('truetype');
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color: #edf3fa;
   background: #11151c;

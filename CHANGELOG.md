@@ -5,8 +5,8 @@
 - Added editable single-file HTML import/export and a version-pinned CDN viewer.
 - Added a minified browser bundle, DeepSeek Harness generation flow, and npm
   release publishing with provenance.
-- Added the CyberHUD Edge palette, six Office-compatible demo palettes, and a
-  six-slide feature tour while keeping Studio chrome neutral.
+- Added the aerospace-glass Edge palette, six Office-compatible demo palettes,
+  and a ten-slide Milky Way walkthrough while keeping Studio chrome neutral.
 - Made omitted/zero thickness a planar rendering contract and documented the
   supported element types plus PPTX/ODP feature matrix.
 - Added native cut, fade, and slide transitions with reduced-motion fallback.

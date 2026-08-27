@@ -8,6 +8,7 @@ import {
   type DeckDocument,
   type DeckElement,
   type DeckSlide,
+  type ElementTransform,
   type ElementFrame,
   type GalaxySolarTextureKey,
   type LoadedDeck,
@@ -51,7 +52,7 @@ const SOLAR_TEXTURES = {
   stars: { id: 'solar-stars', fileName: 'solar-stars.webp', url: solarStarsUrl },
 } satisfies Record<GalaxySolarTextureKey, { id: string; fileName: string; url: string }>;
 
-const DISPLAY_FONT = 'Avenir Next, Inter, Helvetica Neue, Arial, sans-serif';
+const DISPLAY_FONT = 'Orbitron, Avenir Next, Inter, Helvetica Neue, Arial, sans-serif';
 const UI_FONT = 'Inter, Avenir Next, Helvetica Neue, Arial, sans-serif';
 
 interface TextOptions {
@@ -77,6 +78,8 @@ interface PanelOptions {
   strokeWidth?: number;
   renderOrder?: number;
   labelSize?: number;
+  transform?: Partial<ElementTransform>;
+  thickness?: number;
 }
 
 function createText(HUD: DeckThemeColors, options: TextOptions): TextElement {
@@ -105,7 +108,7 @@ function createPanel(HUD: DeckThemeColors, options: PanelOptions): ShapeElement 
     type: 'shape',
     name: options.name,
     frame: options.frame,
-    transform: { ...DEFAULT_TRANSFORM },
+    transform: { ...DEFAULT_TRANSFORM, ...(options.transform ?? {}) },
     opacity: options.opacity ?? 1,
     visible: true,
     renderOrder: options.renderOrder ?? 1,
@@ -113,6 +116,7 @@ function createPanel(HUD: DeckThemeColors, options: PanelOptions): ShapeElement 
     fill: options.fill ?? HUD.surface,
     stroke: options.stroke ?? HUD.primary,
     strokeWidth: options.strokeWidth ?? 1.5,
+    ...(options.thickness === undefined ? {} : { thickness: options.thickness }),
     ...(options.label === undefined
       ? {}
       : {
@@ -172,7 +176,15 @@ export async function createDemoDeck(themeId: DeckThemeId = 'edge'): Promise<Loa
       frame,
       style: { fontSize: 0.016, fontWeight: 700, color: HUD.accent, lineHeight: 1.2 },
     });
-  const metric = (id: string, label: string, value: string, x: number, color: string = HUD.primary) =>
+  const metric = (
+    id: string,
+    label: string,
+    value: string,
+    x: number,
+    color: string = HUD.primary,
+    depth = 0,
+    rotationY = 0,
+  ) =>
     panel({
       id,
       name: label,
@@ -183,6 +195,8 @@ export async function createDemoDeck(themeId: DeckThemeId = 'edge'): Promise<Loa
       textColor: color,
       opacity: 0.9,
       labelSize: 0.022,
+      transform: { z: depth, rotationY },
+      ...(depth === 0 ? {} : { thickness: 0.032 }),
     });
 
   const chartTextStyle: TextStyle = {
@@ -201,7 +215,7 @@ export async function createDemoDeck(themeId: DeckThemeId = 'edge'): Promise<Loa
     opacity: 0.94,
     visible: true,
     renderOrder: 2,
-    title: 'Mean distance from Sol (AU)',
+    title: 'Mean orbital distance from Sol (AU)',
     titleStyle: { ...chartTextStyle, fontSize: 0.024, fontWeight: 700, color: HUD.primary },
     background: HUD.surface,
     plotBackground: HUD.background,
@@ -231,35 +245,6 @@ export async function createDemoDeck(themeId: DeckThemeId = 'edge'): Promise<Loa
       }],
     }],
   };
-  const elementChart: ChartElement = {
-    id: 'element-chart',
-    type: 'chart',
-    name: 'Cosmic element chart',
-    frame: { x: 0.5, y: 0.19, width: 0.43, height: 0.59 },
-    transform: { ...DEFAULT_TRANSFORM },
-    opacity: 0.94,
-    visible: true,
-    renderOrder: 2,
-    title: 'Ordinary matter by mass',
-    titleStyle: { ...chartTextStyle, fontSize: 0.023, fontWeight: 700, color: HUD.primary },
-    background: HUD.surface,
-    plotBackground: HUD.background,
-    axes: [],
-    legend: { visible: true, position: 'bottom', style: chartTextStyle },
-    plots: [{
-      type: 'doughnut',
-      holeSize: 58,
-      series: [{
-        name: 'Element share',
-        points: [
-          { label: 'Hydrogen', value: 74, style: { color: HUD.primary } },
-          { label: 'Helium', value: 24, style: { color: HUD.accent } },
-          { label: 'Heavier elements', value: 2, style: { color: HUD.success } },
-        ],
-        dataLabels: { visible: true, showCategory: true, showPercent: true, position: 'outside', style: chartTextStyle },
-      }],
-    }],
-  };
   const tableBorder = { color: HUD.warning, width: 0.8, style: 'solid' as const };
   const galaxyTable: TableElement = {
     id: 'galaxy-table',
@@ -270,13 +255,13 @@ export async function createDemoDeck(themeId: DeckThemeId = 'edge'): Promise<Loa
     opacity: 0.94,
     visible: true,
     renderOrder: 2,
-    columns: [1.5, 1, 1.5],
+    columns: [1.45, 1.55, 1.5],
     rows: [
-      { height: 0.8, cells: ['Region', 'Scale', 'Our relation'].map((value, column) => ({ column, text: value, header: true, style: { fill: HUD.accent, textStyle: { ...chartTextStyle, color: HUD.background, fontWeight: 700, align: 'center' } } })) },
-      { height: 0.72, cells: ['Stellar disk', '100,000 ly', 'Contains the spiral arms'].map((value, column) => ({ column, text: value })) },
-      { height: 0.72, cells: ['Orion Spur', '3,500 ly wide', 'Our local stellar lane'].map((value, column) => ({ column, text: value })) },
-      { height: 0.72, cells: ['Galactic center', '26,000 ly away', 'Direction of Sagittarius'].map((value, column) => ({ column, text: value })) },
-      { height: 0.72, cells: ['Halo', 'Beyond the disk', 'Old stars and dark matter'].map((value, column) => ({ column, text: value })) },
+      { height: 0.8, cells: ['Structure', 'What the model shows', 'Our relation'].map((value, column) => ({ column, text: value, header: true, style: { fill: HUD.accent, textStyle: { ...chartTextStyle, color: HUD.background, fontWeight: 700, align: 'center' } } })) },
+      { height: 0.72, cells: ['Central bar', 'Dense stellar bar at the core', 'Anchors the major arms'].map((value, column) => ({ column, text: value })) },
+      { height: 0.72, cells: ['Scutum-Centaurus + Perseus', 'Two major spiral arms', 'Highest density of young and old stars'].map((value, column) => ({ column, text: value })) },
+      { height: 0.72, cells: ['Norma + Sagittarius', 'Two minor arms', 'Gas-rich, active star-forming regions'].map((value, column) => ({ column, text: value })) },
+      { height: 0.72, cells: ['Orion Spur', 'Small partial arm', 'Sol lies between Sagittarius and Perseus'].map((value, column) => ({ column, text: value })) },
     ],
     style: {
       fill: HUD.surface,
@@ -286,181 +271,144 @@ export async function createDemoDeck(themeId: DeckThemeId = 'edge'): Promise<Loa
       borders: { top: tableBorder, right: tableBorder, bottom: tableBorder, left: tableBorder },
     },
   };
+  const planetTable: TableElement = {
+    id: 'planet-index-table',
+    type: 'table',
+    name: 'Planet metric index',
+    frame: { x: 0.06, y: 0.22, width: 0.88, height: 0.61 },
+    transform: { ...DEFAULT_TRANSFORM },
+    opacity: 0.94,
+    visible: true,
+    renderOrder: 2,
+    columns: [1.15, 1.45, 1.05, 1.3],
+    rows: [
+      ['Planet', 'Diameter (km)', 'Mean orbit (AU)', 'Orbital period'],
+      ['Mercury', '4,880', '0.387', '88 days'],
+      ['Venus', '12,104', '0.723', '225 days'],
+      ['Earth', '12,756', '1.000', '365 days'],
+      ['Mars', '6,792', '1.524', '687 days'],
+      ['Jupiter', '142,984', '5.203', '11.9 years'],
+      ['Saturn', '120,536', '9.537', '29.5 years'],
+      ['Uranus', '51,118', '19.191', '84.0 years'],
+      ['Neptune', '49,528', '30.069', '164.8 years'],
+    ].map((values, rowIndex) => ({
+      height: rowIndex === 0 ? 0.78 : 0.63,
+      cells: values.map((value, column) => ({
+        column,
+        text: value,
+        header: rowIndex === 0,
+        ...(rowIndex === 0 ? { style: { fill: HUD.accent, textStyle: { ...chartTextStyle, color: HUD.background, fontWeight: 700, align: 'center' } } } : {}),
+      })),
+    })),
+    style: {
+      fill: HUD.surface,
+      textStyle: { ...chartTextStyle, color: HUD.warning, verticalAlign: 'middle' },
+      verticalAlign: 'middle',
+      padding: { top: 5, right: 8, bottom: 5, left: 8 },
+      borders: { top: tableBorder, right: tableBorder, bottom: tableBorder, left: tableBorder },
+    },
+  };
 
   const slides: DeckSlide[] = [
-    slide('welcome-slide', 'Our Universe', 'layout-title-slide', [
-      eyebrow('welcome-kicker', 'A JOURNEY FROM EVERYTHING TO HERE'),
-      text({ id: 'welcome-title', name: 'Hero title', text: 'OUR\nUNIVERSE', frame: { x: 0.07, y: 0.2, width: 0.56, height: 0.3 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.082, fontWeight: 700, lineHeight: 0.9 } }),
-      body('welcome-subtitle', 'A story of scale, light, gravity, and the small blue world from which we learned to look outward.', { x: 0.075, y: 0.57, width: 0.53, height: 0.14 }),
-      panel({ id: 'welcome-coordinate', name: 'Cosmic coordinate', frame: { x: 0.72, y: 0.63, width: 0.2, height: 0.13 }, label: 'SOL\nORION SPUR', fill: HUD.surface, stroke: HUD.accent, textColor: HUD.accent, opacity: 0.86, labelSize: 0.021 }),
+    slide('welcome-slide', 'Milky Way field brief', 'layout-title-slide', [
+      eyebrow('welcome-kicker', 'MILKY WAY / FIELD BRIEF'),
+      text({ id: 'welcome-title', name: 'Hero title', text: 'A WALK THROUGH\nOUR GALAXY.', frame: { x: 0.07, y: 0.2, width: 0.56, height: 0.28 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.074, fontWeight: 700, lineHeight: 0.92 } }),
+      body('welcome-subtitle', 'A flight plan from the Milky Way’s arms to one small blue world in its Orion Spur.', { x: 0.075, y: 0.57, width: 0.47, height: 0.13 }),
+      panel({ id: 'welcome-coordinate', name: 'Mission coordinate', frame: { x: 0.07, y: 0.76, width: 0.22, height: 0.1 }, label: 'SOL / ORION SPUR', stroke: HUD.accent, textColor: HUD.accent, opacity: 0.78, labelSize: 0.017 }),
       text({ id: 'welcome-credit', name: 'Backdrop credit', text: 'GALAXY: NASA/JPL-CALTECH/R. HURT  /  PLANET MAPS: SOLAR SYSTEM SCOPE (CC BY 4.0)', frame: { x: 0.48, y: 0.94, width: 0.47, height: 0.025 }, style: { fontSize: 0.0085, fontWeight: 600, color: HUD.warning, align: 'right', lineHeight: 1 } }),
     ], [
-      'The background is one continuous model. Only the story layer changes as we move through the deck.',
+      'A continuous declarative galaxy scene carries the story from the Milky Way to the Solar System.',
+      'Galaxy structure and solar-system location: NASA Science, https://science.nasa.gov/resource/the-milky-way-galaxy/, https://science.nasa.gov/solar-system/solar-system-facts/.',
       'Galaxy backdrop: NASA/JPL-Caltech/R. Hurt (SSC/Caltech), https://science.nasa.gov/resource/the-milky-way-galaxy/.',
       'Planet and solar-sky maps: Solar System Scope, CC BY 4.0, https://www.solarsystemscope.com/textures/, https://creativecommons.org/licenses/by/4.0/.',
     ].join('\n\n')),
 
-    slide('scale-slide', 'A ladder of scale', 'layout-title-content', [
-      heading('scale-title', 'THE UNIVERSE DOES NOT FIT ONE SCALE.'),
-      body('scale-body', 'Each step outward multiplies distance until familiar intuition gives way to light-years and cosmic time.', { x: 0.07, y: 0.22, width: 0.72, height: 0.1 }),
-      metric('scale-earth', 'EARTH', '12,742 KM', 0.07, HUD.success),
-      metric('scale-sol', 'SOL', '1.39M KM', 0.285, HUD.accent),
-      metric('scale-system', 'SOL SYSTEM', '60 AU', 0.5, HUD.primary),
-      metric('scale-galaxy', 'MILKY WAY', '100K LY', 0.715, HUD.warning),
-      eyebrow('scale-footer', 'ONE LIGHT-YEAR = 9.46 TRILLION KILOMETERS', { x: 0.07, y: 0.82, width: 0.6, height: 0.05 }),
-    ], 'A scale ladder establishes the units that the rest of the presentation uses.'),
+    slide('scale-slide', 'A galaxy in numbers', 'layout-title-content', [
+      heading('scale-title', 'A GALAXY IS A MACHINE OF DISTANCE.'),
+      body('scale-body', 'The rendered particles are a navigational model. The numbers below describe the physical Milky Way.', { x: 0.07, y: 0.22, width: 0.72, height: 0.1 }),
+      metric('scale-diameter', 'STELLAR DISK', '100K LY', 0.07, HUD.primary),
+      metric('scale-stars', 'ESTIMATED STARS', '100-400B', 0.285, HUD.accent),
+      metric('scale-orbit', 'GALACTIC YEAR', '230M YR', 0.5, HUD.success),
+      metric('scale-speed', 'SOL ORBIT SPEED', '828K KM/H', 0.715, HUD.warning),
+      eyebrow('scale-footer', 'THE VIEW IS A MAP OF SCALE, NOT A LITERAL STAR COUNT', { x: 0.07, y: 0.82, width: 0.7, height: 0.05 }),
+    ], 'NASA estimates the Milky Way at about 100,000 light-years across. Star counts remain uncertain because faint stars and dust are difficult to measure from within the disk.'),
 
-    slide('light-slide', 'Light is our messenger', 'layout-section-header', [
-      eyebrow('light-kicker', '03  /  THE COSMIC MESSENGER', { x: 0.08, y: 0.25, width: 0.5, height: 0.05 }),
-      text({ id: 'light-title', name: 'Section title', text: 'To look far away\nis to look back in time.', frame: { x: 0.08, y: 0.34, width: 0.72, height: 0.2 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.061, fontWeight: 700, lineHeight: 1.02 } }),
-      body('light-body', 'Moonlight is 1.3 seconds old. Sunlight is 8 minutes old. The nearest large galaxy arrives 2.5 million years late.', { x: 0.08, y: 0.61, width: 0.67, height: 0.13 }),
-      panel({ id: 'light-speed', name: 'Speed of light', frame: { x: 0.8, y: 0.33, width: 0.13, height: 0.24 }, label: '299,792\nKM / S', fill: HUD.accent, stroke: HUD.accent, textColor: HUD.background, labelSize: 0.024 }),
-    ], 'Astronomy is historical evidence carried by light.'),
-
-    slide('address-slide', 'Our cosmic address', 'layout-two-content', [
-      heading('address-title', 'EVERY LOCATION NESTS INSIDE ANOTHER.'),
-      panel({ id: 'address-left', name: 'Local address', frame: { x: 0.07, y: 0.28, width: 0.39, height: 0.45 }, label: 'EARTH\nSOL SYSTEM\nORION SPUR\nMILKY WAY', fill: HUD.surface, stroke: HUD.primary, textColor: HUD.primary, opacity: 0.88, labelSize: 0.032 }),
-      panel({ id: 'address-right', name: 'Large scale address', frame: { x: 0.54, y: 0.28, width: 0.39, height: 0.45 }, label: 'LOCAL GROUP\nLANIAKEA\nCOSMIC WEB\nOBSERVABLE UNIVERSE', fill: HUD.surface, stroke: HUD.accent, textColor: HUD.accent, opacity: 0.88, labelSize: 0.03 }),
-      body('address-caption', 'We are not at a center. We are one address in a structure without a privileged viewpoint.', { x: 0.15, y: 0.79, width: 0.7, height: 0.08 }, 'center'),
-    ], 'The nested address moves from Earth to the largest mapped structures.'),
-
-    slide('milky-way-slide', 'The Milky Way', 'layout-comparison', [
-      heading('milky-way-title', 'A BARRED SPIRAL, SEEN FROM WITHIN.'),
-      body('milky-way-body', 'Hundreds of billions of stars orbit a common center. Gas, dust, and dark matter shape the disk while our system rides the Orion Spur.', { x: 0.07, y: 0.23, width: 0.44, height: 0.18 }),
-      panel({ id: 'milky-way-scale', name: 'Galaxy scale', frame: { x: 0.07, y: 0.53, width: 0.2, height: 0.17 }, label: 'ABOUT\n100,000 LY', stroke: HUD.primary, textColor: HUD.primary, opacity: 0.88, labelSize: 0.023 }),
-      panel({ id: 'milky-way-stars', name: 'Star count', frame: { x: 0.3, y: 0.53, width: 0.2, height: 0.17 }, label: '100-400B\nSTARS', stroke: HUD.accent, textColor: HUD.accent, opacity: 0.88, labelSize: 0.023 }),
-      text({ id: 'milky-way-model', name: 'Model caption', text: 'The moving galaxy behind this slide is the same scene that began the presentation.', frame: { x: 0.58, y: 0.31, width: 0.3, height: 0.24 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.039, fontWeight: 700, color: HUD.warning, align: 'center', verticalAlign: 'middle', lineHeight: 1.25 } }),
-      eyebrow('milky-way-footer', 'ONE MODEL  /  ONE CLOCK  /  EVERY SLIDE', { x: 0.58, y: 0.63, width: 0.3, height: 0.05 }),
-    ], 'The persistent particle model adapts the calibrated CyberHUD Galaxy distribution.'),
-
-    slide('galaxy-anatomy-slide', 'Anatomy of our galaxy', 'layout-title-only', [
-      heading('galaxy-anatomy-title', 'THE MILKY WAY HAS NEIGHBORHOODS.'),
+    slide('anatomy-slide', 'The Milky Way blueprint', 'layout-title-only', [
+      heading('anatomy-title', 'A BARRED SPIRAL WITH A LOCAL LANE.'),
       galaxyTable,
-      eyebrow('galaxy-anatomy-footer', 'DISTANCES ARE APPROXIMATE; THE MODEL IS A MAP, NOT A PHOTOGRAPH', { x: 0.07, y: 0.82, width: 0.78, height: 0.05 }),
-    ], 'A semantic table describes the structures represented by the galaxy scene.'),
+      eyebrow('anatomy-footer', 'THE ORION SPUR IS OUR LOCAL STELLAR ADDRESS', { x: 0.07, y: 0.82, width: 0.68, height: 0.05 }),
+    ], 'NASA describes the Milky Way as a barred spiral with two major arms, two minor arms, and the Sun in the Orion Spur between Sagittarius and Perseus.'),
 
-    slide('sol-slide', 'A star called Sol', 'layout-picture-caption', [
-      text({ id: 'sol-title', name: 'Slide title', text: 'SOL', frame: { x: 0.055, y: 0.2, width: 0.28, height: 0.16 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.078, fontWeight: 700, lineHeight: 1 } }),
-      body('sol-body', 'A middle-aged G-type star. Ordinary by galactic standards, indispensable by ours.', { x: 0.055, y: 0.41, width: 0.29, height: 0.16 }),
-      panel({ id: 'sol-age', name: 'Sol age', frame: { x: 0.055, y: 0.65, width: 0.13, height: 0.12 }, label: '4.6B YR\nOLD', stroke: HUD.accent, textColor: HUD.accent, opacity: 0.9, labelSize: 0.019 }),
-      panel({ id: 'sol-share', name: 'Sol mass share', frame: { x: 0.205, y: 0.65, width: 0.14, height: 0.12 }, label: '99.86%\nSYSTEM MASS', stroke: HUD.primary, textColor: HUD.primary, opacity: 0.9, labelSize: 0.018 }),
-      text({ id: 'sol-marker-copy', name: 'Sol marker explanation', text: 'The Galactic marker opens into the same nested solar system used by the following slides.', frame: { x: 0.58, y: 0.62, width: 0.31, height: 0.11 }, style: { fontSize: 0.024, color: HUD.warning, align: 'center', lineHeight: 1.35 } }),
-    ], 'The camera crosses from Sol at 8.15 kiloparsecs into the nested CyberHUD-derived solar system.'),
+    slide('address-slide', 'Our galactic address', 'layout-comparison', [
+      heading('address-title', 'WE ARE NOT NEAR THE CENTER.'),
+      panel({ id: 'address-location', name: 'Solar location', frame: { x: 0.07, y: 0.29, width: 0.37, height: 0.39 }, label: 'SOL\nORION SPUR\nBETWEEN SAGITTARIUS\nAND PERSEUS', stroke: HUD.primary, textColor: HUD.primary, opacity: 0.8, labelSize: 0.026 }),
+      panel({ id: 'address-motion', name: 'Galactic motion', frame: { x: 0.5, y: 0.29, width: 0.25, height: 0.39 }, label: 'ABOUT\n26,000 LY\nFROM THE CENTER\n\n230M-YEAR\nORBIT', stroke: HUD.accent, textColor: HUD.accent, opacity: 0.8, labelSize: 0.022 }),
+      body('address-caption', 'Sol travels around the Milky Way at about 828,000 kilometers per hour. Our ordinary location is a moving coordinate.', { x: 0.07, y: 0.76, width: 0.62, height: 0.1 }),
+    ], 'Our Solar System is about 26,000 light-years from the Galactic Center and completes one orbit in about 230 million years.'),
 
-    slide('solar-family-slide', 'The solar family', 'layout-content-caption', [
-      text({ id: 'solar-family-title', name: 'Slide title', text: 'GRAVITY KEEPS\nA FAMILY TOGETHER.', frame: { x: 0.055, y: 0.2, width: 0.26, height: 0.18 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.045, fontWeight: 700, lineHeight: 1.03 } }),
-      body('solar-family-body', 'Eight planets occupy a tiny fraction of the galaxy, yet even their distances span two orders of magnitude.', { x: 0.055, y: 0.45, width: 0.26, height: 0.18 }),
-      panel({ id: 'solar-family-au', name: 'Astronomical unit', frame: { x: 0.055, y: 0.7, width: 0.26, height: 0.1 }, label: '1 AU = EARTH TO SOL', stroke: HUD.success, textColor: HUD.success, opacity: 0.88, labelSize: 0.018 }),
+    slide('handoff-slide', 'From galaxy to star', 'layout-section-header', [
+      eyebrow('handoff-kicker', 'GALACTIC SCALE / LOCAL ARRIVAL', { x: 0.08, y: 0.25, width: 0.5, height: 0.05 }),
+      text({ id: 'handoff-title', name: 'Section title', text: 'ONE ORDINARY STAR\nHOLDS A WHOLE SYSTEM.', frame: { x: 0.08, y: 0.34, width: 0.58, height: 0.2 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.058, fontWeight: 700, lineHeight: 1.02 } }),
+      body('handoff-body', 'The next transition leaves 26,000 light-years behind and hands the camera to Sol.', { x: 0.08, y: 0.61, width: 0.52, height: 0.12 }),
+      panel({ id: 'handoff-distance', name: 'Solar system handoff', frame: { x: 0.08, y: 0.77, width: 0.22, height: 0.09 }, label: 'FOCUS / SOL', stroke: HUD.accent, textColor: HUD.accent, opacity: 0.78, labelSize: 0.018 }),
+    ], 'This slide uses the same background scene as the galactic overview, then focuses its nested solar-system model on Sol.'),
+
+    slide('sol-slide', 'Sol systems brief', 'layout-picture-caption', [
+      text({ id: 'sol-title', name: 'Slide title', text: 'SOL', frame: { x: 0.055, y: 0.2, width: 0.28, height: 0.13 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.074, fontWeight: 700, lineHeight: 1 } }),
+      body('sol-body', 'A middle-aged G-type star. Ordinary by galactic standards, indispensable to every orbit shown here.', { x: 0.055, y: 0.39, width: 0.28, height: 0.16 }),
+      panel({ id: 'sol-diameter', name: 'Sol diameter', frame: { x: 0.055, y: 0.63, width: 0.13, height: 0.13 }, label: '1.4M KM\nDIAMETER', stroke: HUD.accent, textColor: HUD.accent, opacity: 0.78, labelSize: 0.017, transform: { z: 0.06, rotationY: -3 }, thickness: 0.028 }),
+      panel({ id: 'sol-age', name: 'Sol age', frame: { x: 0.205, y: 0.63, width: 0.14, height: 0.13 }, label: '4.6B YR\nOLD', stroke: HUD.primary, textColor: HUD.primary, opacity: 0.78, labelSize: 0.018, transform: { z: 0.1, rotationY: 2 }, thickness: 0.028 }),
+      text({ id: 'sol-offset-caption', name: 'Solar framing caption', text: 'The focused Sun is intentionally held on the right so the systems brief stays clear on the left.', frame: { x: 0.055, y: 0.81, width: 0.29, height: 0.08 }, style: { fontSize: 0.016, color: HUD.warning, lineHeight: 1.35 } }),
+    ], 'The focused horizon camera uses a target offset to hold Sol in the right half of the viewport while the authoring layer remains fixed on the left.'),
+
+    slide('orbits-slide', 'Eight orbital lanes', 'layout-content-caption', [
+      text({ id: 'orbits-title', name: 'Slide title', text: 'EIGHT WORLDS.\nONE GRAVITY WELL.', frame: { x: 0.055, y: 0.2, width: 0.27, height: 0.18 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.044, fontWeight: 700, lineHeight: 1.03 } }),
+      body('orbits-body', 'Mean orbital distance makes the outer system look sparse. Neptune is about 30 times farther from Sol than Earth.', { x: 0.055, y: 0.45, width: 0.28, height: 0.18 }),
+      panel({ id: 'orbits-au', name: 'Astronomical unit', frame: { x: 0.055, y: 0.7, width: 0.26, height: 0.1 }, label: '1 AU = EARTH TO SOL', stroke: HUD.success, textColor: HUD.success, opacity: 0.78, labelSize: 0.018 }),
       orbitChart,
-    ], 'The chart stores orbital distances as editable semantic data.'),
+    ], 'The chart is editable semantic data. Values are mean orbital distances in astronomical units.'),
 
-    slide('rocky-worlds-slide', 'The rocky worlds', 'layout-blank', [
-      eyebrow('rocky-kicker', '09  /  THE INNER SYSTEM'),
-      heading('rocky-title', 'FOUR WORLDS BUILT FROM ROCK AND METAL.', { x: 0.07, y: 0.15, width: 0.78, height: 0.14 }),
-      ...([
-        ['MERCURY', 'HOT DAYS\nCOLD NIGHTS', HUD.warning],
-        ['VENUS', 'RUNAWAY\nGREENHOUSE', HUD.accent],
-        ['EARTH', 'LIQUID WATER\nLIVING OCEAN', HUD.success],
-        ['MARS', 'ANCIENT RIVERS\nTHIN AIR', HUD.danger],
-      ] satisfies Array<[string, string, string]>).map(([label, copy, color], index) => panel({
-        id: `rocky-${String(label).toLowerCase()}`,
-        name: `${label} card`,
-        frame: { x: 0.07 + index * 0.22, y: 0.43, width: 0.18, height: 0.25 },
-        label: `${label}\n\n${copy}`,
-        fill: HUD.surface,
-        stroke: color,
-        textColor: color,
-        opacity: 0.9,
-        labelSize: 0.019,
-      })),
-      body('rocky-footer', 'Similar ingredients produced radically different climates.', { x: 0.2, y: 0.77, width: 0.6, height: 0.07 }, 'center'),
-    ], 'The inner planets are compared as outcomes of shared initial materials.'),
+    slide('planet-index-slide', 'Planet index', 'layout-blank', [
+      eyebrow('planet-index-kicker', 'SOLAR SYSTEM / REFERENCE DATA'),
+      heading('planet-index-title', 'EIGHT WORLDS, THREE USEFUL METRICS.', { x: 0.07, y: 0.12, width: 0.8, height: 0.08 }),
+      planetTable,
+      eyebrow('planet-index-footer', 'DIAMETERS AND MEAN ORBITS ARE APPROXIMATE NASA REFERENCE VALUES', { x: 0.07, y: 0.86, width: 0.76, height: 0.04 }),
+    ], 'Planet diameters, distances, and orbital periods are NASA reference values. This semantic table remains editable in Studio.'),
 
-    slide('giant-worlds-slide', 'The giant worlds', 'layout-two-content', [
-      heading('giants-title', 'BEYOND THE ASTEROIDS, SCALE CHANGES AGAIN.'),
-      panel({ id: 'gas-giants', name: 'Gas giants', frame: { x: 0.07, y: 0.29, width: 0.4, height: 0.42 }, label: 'JUPITER\nLargest planet\n\nSATURN\nA world encircled', fill: HUD.surface, stroke: HUD.accent, textColor: HUD.accent, opacity: 0.9, labelSize: 0.026 }),
-      panel({ id: 'ice-giants', name: 'Ice giants', frame: { x: 0.53, y: 0.29, width: 0.4, height: 0.42 }, label: 'URANUS\nRotates on its side\n\nNEPTUNE\nSupersonic winds', fill: HUD.surface, stroke: HUD.primary, textColor: HUD.primary, opacity: 0.9, labelSize: 0.026 }),
-      body('giants-footer', 'Together, the four giants contain more than 99 percent of all planetary mass.', { x: 0.18, y: 0.79, width: 0.64, height: 0.07 }, 'center'),
-    ], 'The outer planets divide naturally into gas giants and ice giants.'),
+    slide('giant-worlds-slide', 'The outer worlds', 'layout-two-content', [
+      heading('giants-title', 'THE OUTER SYSTEM CHANGES THE SCALE AGAIN.', { x: 0.07, y: 0.08, width: 0.76, height: 0.18 }),
+      panel({ id: 'gas-giants', name: 'Gas giants', frame: { x: 0.06, y: 0.29, width: 0.19, height: 0.38 }, label: 'GAS GIANTS\n\nJUPITER\n142,984 KM\n\nSATURN\n120,536 KM', stroke: HUD.accent, textColor: HUD.accent, opacity: 0.78, labelSize: 0.018 }),
+      panel({ id: 'ice-giants', name: 'Ice giants', frame: { x: 0.275, y: 0.29, width: 0.19, height: 0.38 }, label: 'ICE GIANTS\n\nURANUS\n51,118 KM\n\nNEPTUNE\n49,528 KM', stroke: HUD.primary, textColor: HUD.primary, opacity: 0.78, labelSize: 0.018 }),
+      body('giants-footer', 'Jupiter is held above the lower edge: a physical subject, not a backdrop behind the comparison.', { x: 0.06, y: 0.74, width: 0.4, height: 0.1 }),
+    ], 'The camera focuses Jupiter closely enough to make its scale legible while keeping the comparison clear on the left.'),
 
-    slide('earth-luna-slide', 'Earth and Luna', 'layout-comparison', [
-      heading('earth-luna-title', 'A DOUBLE PORTRAIT SHAPED BY GRAVITY.'),
-      text({ id: 'earth-title', name: 'Earth heading', text: 'EARTH', frame: { x: 0.09, y: 0.28, width: 0.33, height: 0.06 }, style: { fontSize: 0.025, fontWeight: 700, color: HUD.success, align: 'center' } }),
-      panel({ id: 'earth-card', name: 'Earth facts', frame: { x: 0.09, y: 0.38, width: 0.33, height: 0.31 }, label: '71% OCEAN\nACTIVE GEOLOGY\nTHICK ATMOSPHERE\nONE BIOSPHERE', stroke: HUD.success, textColor: HUD.success, opacity: 0.9, labelSize: 0.024 }),
-      text({ id: 'luna-title', name: 'Luna heading', text: 'LUNA', frame: { x: 0.58, y: 0.28, width: 0.33, height: 0.06 }, style: { fontSize: 0.025, fontWeight: 700, color: HUD.primary, align: 'center' } }),
-      panel({ id: 'luna-card', name: 'Luna facts', frame: { x: 0.58, y: 0.38, width: 0.33, height: 0.31 }, label: 'TIDALLY LOCKED\nAIRLESS SURFACE\nSTABILIZES TILT\nDRIVES TIDES', stroke: HUD.primary, textColor: HUD.primary, opacity: 0.9, labelSize: 0.024 }),
-      body('earth-luna-footer', 'Two bodies, one evolving system.', { x: 0.3, y: 0.78, width: 0.4, height: 0.07 }, 'center'),
-    ], 'Earth and Luna are presented as a coupled dynamical system.'),
-
-    slide('stardust-slide', 'We are made of stardust', 'layout-content-caption', [
-      text({ id: 'stardust-title', name: 'Slide title', text: 'THE PERIODIC TABLE\nHAS A COSMIC HISTORY.', frame: { x: 0.055, y: 0.2, width: 0.38, height: 0.18 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.044, fontWeight: 700, lineHeight: 1.04 } }),
-      body('stardust-body', 'Hydrogen formed early. Stars fused heavier nuclei. Exploding stars and colliding remnants scattered the ingredients of worlds and life.', { x: 0.055, y: 0.46, width: 0.37, height: 0.21 }),
-      eyebrow('stardust-footer', 'CARBON  /  OXYGEN  /  IRON  /  CALCIUM', { x: 0.055, y: 0.75, width: 0.37, height: 0.05 }),
-      elementChart,
-    ], 'The doughnut chart keeps the broad cosmic abundance split editable.'),
-
-    slide('deep-time-slide', 'Deep time', 'layout-title-content', [
-      heading('time-title', 'THE UNIVERSE HAS BEEN BECOMING FOR 13.8 BILLION YEARS.'),
-      ...([
-        ['13.8B', 'UNIVERSE BEGINS'],
-        ['13.6B', 'FIRST STARS'],
-        ['4.6B', 'SOL FORMS'],
-        ['4.5B', 'EARTH FORMS'],
-        ['NOW', 'WE LOOK BACK'],
-      ] satisfies Array<[string, string]>).map(([value, label], index) => panel({
-        id: `time-${index + 1}`,
-        name: label,
-        frame: { x: 0.055 + index * 0.185, y: 0.41, width: 0.155, height: 0.2 },
-        label: `${value}\n${label}`,
-        fill: index === 4 ? HUD.accent : HUD.surface,
-        stroke: index === 4 ? HUD.accent : HUD.primary,
-        textColor: index === 4 ? HUD.background : HUD.primary,
-        opacity: 0.9,
-        labelSize: 0.019,
-      })),
-      panel({ id: 'time-line', name: 'Timeline', frame: { x: 0.07, y: 0.67, width: 0.86, height: 0.006 }, shape: 'line', fill: HUD.accent, stroke: HUD.accent, strokeWidth: 4 }),
-      body('time-footer', 'Nearly all of cosmic history passed before humans learned that galaxies existed beyond the Milky Way.', { x: 0.17, y: 0.75, width: 0.66, height: 0.1 }, 'center'),
-    ], 'The timeline compresses cosmic history into five memorable anchors.'),
-
-    slide('life-slide', 'A universe that can know itself', 'layout-title-only', [
-      heading('life-title', 'SO FAR, LIFE IS THE RAREST THING WE KNOW.'),
-      panel({ id: 'life-water', name: 'Water condition', frame: { x: 0.07, y: 0.33, width: 0.25, height: 0.27 }, label: 'LIQUID WATER\nA solvent for chemistry', stroke: HUD.primary, textColor: HUD.primary, opacity: 0.9, labelSize: 0.023 }),
-      panel({ id: 'life-energy', name: 'Energy condition', frame: { x: 0.375, y: 0.33, width: 0.25, height: 0.27 }, label: 'ENERGY\nA gradient to exploit', stroke: HUD.accent, textColor: HUD.accent, opacity: 0.9, labelSize: 0.023 }),
-      panel({ id: 'life-time', name: 'Time condition', frame: { x: 0.68, y: 0.33, width: 0.25, height: 0.27 }, label: 'TIME\nA chance to evolve', stroke: HUD.success, textColor: HUD.success, opacity: 0.9, labelSize: 0.023 }),
-      body('life-body', 'The search continues through nearby worlds, distant atmospheres, and signals that nature alone may not explain.', { x: 0.18, y: 0.7, width: 0.64, height: 0.1 }, 'center'),
-    ], 'The conditions are hypotheses for exploration, not a claim that Earth is the only path to life.'),
-
-    slide('finale-slide', 'We belong to the story', 'layout-title-slide', [
-      eyebrow('finale-kicker', '15  /  A VIEW FROM ONE SMALL WORLD'),
-      text({ id: 'finale-title', name: 'Final statement', text: 'WE ARE THE UNIVERSE\nLOOKING BACK AT ITSELF.', frame: { x: 0.07, y: 0.22, width: 0.72, height: 0.24 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.058, fontWeight: 700, lineHeight: 1.02 } }),
-      body('finale-body', 'Every atom has a history. Every photon carries a message. Every question begins from here.', { x: 0.075, y: 0.56, width: 0.53, height: 0.14 }),
-      panel({ id: 'finale-coordinate', name: 'Final coordinate', frame: { x: 0.72, y: 0.28, width: 0.2, height: 0.34 }, label: 'EARTH\nSOL\nMILKY WAY\nOUR UNIVERSE', fill: HUD.accent, stroke: HUD.accent, textColor: HUD.background, opacity: 0.9, labelSize: 0.026 }),
-    ], 'The closing returns from cosmic scale to the observer.'),
+    slide('finale-slide', 'Earth, our endpoint', 'layout-title-slide', [
+      eyebrow('finale-kicker', 'FINAL COORDINATE / EARTH'),
+      text({ id: 'finale-title', name: 'Final statement', text: 'ONE BLUE WORLD\nIN A MOVING GALAXY.', frame: { x: 0.07, y: 0.22, width: 0.54, height: 0.24 }, style: { fontFamily: DISPLAY_FONT, fontSize: 0.057, fontWeight: 700, lineHeight: 1.02 } }),
+      body('finale-body', 'The walkthrough ends where the measurements begin: one planet, one star, one local spur in the Milky Way.', { x: 0.075, y: 0.56, width: 0.45, height: 0.14 }),
+      panel({ id: 'finale-coordinate', name: 'Final coordinate', frame: { x: 0.075, y: 0.76, width: 0.2, height: 0.1 }, label: 'EARTH / SOL\nORION SPUR', stroke: HUD.accent, textColor: HUD.accent, opacity: 0.78, labelSize: 0.017 }),
+      text({ id: 'finale-offset-caption', name: 'Earth framing caption', text: 'Earth remains to the right of the closing copy.', frame: { x: 0.075, y: 0.88, width: 0.3, height: 0.04 }, style: { fontSize: 0.013, color: HUD.warning, lineHeight: 1.2 } }),
+    ], 'The horizon focus camera offsets Earth to the right side of the viewport, preserving a left-side closing message.'),
   ];
 
   const backgroundCameras: BackgroundCamera[] = [
-    { x: 0, y: 0, z: 1, view: 'top', transitionDurationMs: 0 },
-    { x: -3.5, y: 1.6, z: 0, view: 'tilt', transitionDurationMs: 1_400 },
-    { x: 2.1, y: 0.2, z: -3.8, view: 'tilt', transitionDurationMs: 1_500 },
-    { x: 0, y: 0, z: 3, view: 'top', transitionDurationMs: 1_600 },
-    { x: 2.1, y: 0, z: -2.4, view: 'top', transitionDurationMs: 1_400 },
-    { x: 2.1, y: 0.5, z: -4.2, view: 'tilt', transitionDurationMs: 1_500 },
-    { x: 0, y: 0, z: 0, distance: 2.2, view: 'tilt', focusBody: 'sol', transitionDurationMs: 1_600 },
-    { x: 0, y: 0, z: 0, distance: 11, view: 'tilt', focusBody: 'sol', transitionDurationMs: 1_400 },
-    { x: 0, y: 0, z: 0, distance: 2.4, view: 'top', focusBody: 'sol', transitionDurationMs: 1_300 },
-    { x: 0, y: 0, z: 0, distance: 0.68, view: 'horizon', focusBody: 'jupiter', orbitAzimuthDegrees: -58, orbitElevationDegrees: 0, transitionDurationMs: 1_500 },
-    { x: 0, y: 0, z: 0, distance: 0.8, view: 'horizon', focusBody: 'earth', orbitAzimuthDegrees: 58, orbitElevationDegrees: 0, transitionDurationMs: 1_600 },
-    { x: 2.1, y: 0, z: -3.5, view: 'tilt', transitionDurationMs: 1_500 },
-    { x: -2.5, y: 2, z: 0.8, view: 'top', transitionDurationMs: 1_400 },
-    { x: 0, y: 0, z: 4.2, view: 'tilt', transitionDurationMs: 1_700 },
-    { x: -0.035, y: 0, z: 0, distance: 0.42, view: 'horizon', focusBody: 'earth', orbitAzimuthDegrees: 58, orbitElevationDegrees: 0, transitionDurationMs: 1_600 },
+    { x: -3.1, y: 1.1, z: 1.2, view: 'top', transitionDurationMs: 0 },
+    { x: -1.8, y: 0.9, z: -1.3, view: 'tilt', transitionDurationMs: 1_400 },
+    { x: 2.4, y: 0.5, z: -2.3, view: 'top', transitionDurationMs: 1_500 },
+    { x: 0.6, y: -1.3, z: -3.2, view: 'tilt', transitionDurationMs: 1_600 },
+    { x: -0.2, y: 0, z: 0, distance: 9.5, view: 'tilt', focusBody: 'sol', transitionDurationMs: 2_600 },
+    { x: -0.32, y: 0.12, z: 0, distance: 1.8, view: 'horizon', focusBody: 'sol', orbitAzimuthDegrees: -42, orbitElevationDegrees: 8, transitionDurationMs: 2_200 },
+    { x: -0.25, y: 0.1, z: 0, distance: 11, view: 'top', focusBody: 'sol', transitionDurationMs: 1_800 },
+    { x: -0.4, y: 0.2, z: 0, distance: 9.5, view: 'tilt', focusBody: 'sol', transitionDurationMs: 1_600 },
+    { x: 0, y: 0.12, z: 0, distance: 0.56, view: 'horizon', focusBody: 'jupiter', orbitAzimuthDegrees: -58, orbitElevationDegrees: 10, transitionDurationMs: 1_900 },
+    { x: 0, y: -0.1, z: 0, distance: 0.42, view: 'horizon', focusBody: 'earth', orbitAzimuthDegrees: 58, orbitElevationDegrees: 4, transitionDurationMs: 1_900 },
   ];
 
   slides.forEach((deckSlide, index) => {
     deckSlide.backgroundCamera = backgroundCameras[index]!;
     deckSlide.transition = index === 0
       ? { type: 'cut', durationMs: 0 }
-      : { type: index % 2 === 0 ? 'slide' : 'fade', durationMs: 520 };
+      : { type: index === 4 ? 'fade' : index % 2 === 0 ? 'slide' : 'fade', durationMs: 520 };
   });
 
   const packagedAssets = [
@@ -497,20 +445,20 @@ export async function createDemoDeck(themeId: DeckThemeId = 'edge'): Promise<Loa
       id: DEMO_DECK_ID,
       kind: 'presentation',
       metadata: {
-        title: 'Our Universe',
+        title: 'Milky Way Field Brief',
         author: 'PrismDeckJS',
-        description: 'A fifteen-slide spatial journey from cosmic scale to our place around Sol.',
+        description: 'A ten-slide spatial walkthrough from the Milky Way’s arms to Earth, with focused astronomical framing and editable data surfaces.',
         sourceFormat: 'native',
       },
       size: { width: 1600, height: 900 },
       backgroundScene: {
         type: 'galaxy',
         seed: 815,
-        starCount: 7_000,
-        rotationDegreesPerSecond: -3,
-        coreColor: '#FFE5C7',
-        armColor: '#C7DCFF',
-        solColor: '#FFF0A6',
+        starCount: 9_000,
+        rotationDegreesPerSecond: -0.75,
+        coreColor: '#F6E2C8',
+        armColor: '#8FAED0',
+        solColor: '#FFF1C5',
         backdropAssetId: GALAXY_BACKDROP_ASSET_ID,
         solarSystem: {
           textureAssetIds: Object.fromEntries(
