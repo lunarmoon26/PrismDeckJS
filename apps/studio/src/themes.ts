@@ -12,7 +12,7 @@ export const DECK_THEMES = [
   {
     id: 'edge',
     label: 'Edge',
-    colors: { background: '#120018', surface: '#2B124C', primary: '#00F0FF', accent: '#F8E602', success: '#4BFF21', warning: '#F4D5FD', danger: '#F96363' },
+    colors: { background: '#06101E', surface: '#122238', primary: '#F2F7FC', accent: '#89B8D8', success: '#7FC7B2', warning: '#C9D9E8', danger: '#E7957B' },
   },
   {
     id: 'edge-light',

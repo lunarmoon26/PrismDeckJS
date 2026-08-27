@@ -100,9 +100,11 @@ npm run test:e2e
 npm run export:html -- examples/deepseek-harness/deck.json generated/deck.html
 ```
 
-Studio opens with a fifteen-slide PrismDeck feature tour that exercises all nine
-layouts, the original CyberHUD Edge palette, and six Office-compatible presentation palettes. Studio chrome remains
-neutral, and theme selection never changes imported deck colors. See
+Studio opens with a ten-slide Milky Way walkthrough that exercises all nine
+layouts, semantic charts and tables, shallow spatial depth, focused background
+cameras, the aerospace-glass Edge palette, and six Office-compatible presentation
+palettes. Studio chrome remains neutral, and theme selection never changes
+imported deck colors. See
 [`docs/themes.md`](docs/themes.md), [`docs/transitions.md`](docs/transitions.md), the
 [`default layouts`](docs/layouts.md), [`element contract`](docs/element-types.md), and the
 [`PPTX/ODP feature matrix`](docs/import-compatibility.md#feature-matrix).

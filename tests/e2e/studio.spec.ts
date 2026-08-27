@@ -59,7 +59,7 @@ test('loads the animated universe deck and exercises studio controls', async ({ 
   await page.goto('/');
   await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
   await expect(page.getByLabel('Interactive 3D presentation canvas')).toBeVisible();
-  await expect(page.locator('.slide-card')).toHaveCount(15);
+  await expect(page.locator('.slide-card')).toHaveCount(10);
   await expect(page.locator('.layer-list button')).toHaveCount(5);
   await expect(page.getByLabel('Slide layout').locator('option')).toHaveText([
     'Title Slide',
@@ -122,7 +122,7 @@ test('loads the animated universe deck and exercises studio controls', async ({ 
   const capturePromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Capture PNG' }).click();
   const capture = await capturePromise;
-  expect(capture.suggestedFilename()).toBe('A-ladder-of-scale-mono.png');
+  expect(capture.suggestedFilename()).toBe('A-galaxy-in-numbers-mono.png');
   await page.locator('.slide-card').first().click();
   await expect(page.locator('.slide-card').first()).toHaveClass(/is-active/);
   expect(consoleErrors).toEqual([]);
@@ -252,7 +252,7 @@ test('round-trips an edited deck through HTML', async ({ page }) => {
   await page.getByLabel('Scale X value').fill('1.1');
   await page.getByLabel('Scene background color').fill('#123456');
   await page.getByRole('button', { name: /Add slide/ }).click();
-  await expect(page.locator('.slide-card')).toHaveCount(16);
+  await expect(page.locator('.slide-card')).toHaveCount(11);
   await expect(page.locator('.slide-card__preview').last()).toHaveCSS('background-color', 'rgb(18, 52, 86)');
   await expect(page.locator('.save-dirty-dot')).toBeVisible();
 
@@ -260,7 +260,7 @@ test('round-trips an edited deck through HTML', async ({ page }) => {
   await page.getByRole('button', { name: 'Export HTML' }).click();
   const download = await downloadPromise;
   const downloadPath = await download.path();
-  expect(download.suggestedFilename()).toBe('Our-Universe.html');
+  expect(download.suggestedFilename()).toBe('Milky-Way-Field-Brief.html');
   expect(downloadPath).toBeTruthy();
   const html = await readFile(downloadPath!, 'utf8');
   expect(html).toContain('type="application/vnd.prismdeck+zip;base64"');
@@ -271,7 +271,7 @@ test('round-trips an edited deck through HTML', async ({ page }) => {
     buffer: Buffer.from(html),
   });
   await expect(page.locator('.stage-message')).toBeHidden();
-  await expect(page.locator('.slide-card')).toHaveCount(16);
+  await expect(page.locator('.slide-card')).toHaveCount(11);
   await expect(page.getByLabel('Demo deck theme')).toBeDisabled();
   await page.locator('.slide-card').first().click();
   await page.locator('.layer-list button').nth(1).click();
@@ -296,7 +296,7 @@ test('loads the animated universe deck on mobile', { tag: ['@mobile', '@mobile-o
   await page.goto('/');
   await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
   await expect(page.getByLabel('Interactive 3D presentation canvas')).toBeVisible();
-  await expect(page.locator('.slide-card')).toHaveCount(15);
+  await expect(page.locator('.slide-card')).toHaveCount(10);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(consoleErrors).toEqual([]);
 });
@@ -342,7 +342,7 @@ test('loads exported HTML with the built browser runtime', { tag: '@mobile' }, a
   await viewer.goto(pathToFileURL(viewerPath).href);
   await expect(viewer.locator('.status')).toBeHidden({ timeout: 30_000 });
   expect(rapierChunkRequested).toBe(false);
-  await expect(viewer.locator('.count')).toHaveText('1 / 15');
+  await expect(viewer.locator('.count')).toHaveText('1 / 10');
   await expect(viewer.getByLabel('Interactive 3D presentation canvas')).toBeVisible();
   const outputMode = viewer.getByLabel('Output mode');
   await expect(outputMode).toHaveValue('mono');
@@ -353,8 +353,8 @@ test('loads exported HTML with the built browser runtime', { tag: '@mobile' }, a
   await viewer.keyboard.press('1');
   await expect(outputMode).toHaveValue('mono');
 
-  for (let index = 0; index < 8; index += 1) await viewer.getByLabel('Next slide').click();
-  await expect(viewer.locator('.count')).toHaveText('9 / 15');
+  for (let index = 0; index < 3; index += 1) await viewer.getByLabel('Next slide').click();
+  await expect(viewer.locator('.count')).toHaveText('4 / 10');
   await viewer.waitForTimeout(100);
   const beforeGalaxyStep = await viewer.locator('main').screenshot();
   await viewer.waitForTimeout(500);
@@ -375,7 +375,7 @@ test('keeps focused background bodies near convergence in both SBS modes', { tag
   await page.getByLabel('SBS depth scale').focus();
   await page.keyboard.press('End');
   await expect(page.getByText('1.50×')).toBeVisible();
-  await page.locator('.slide-card').nth(9).click();
+  await page.locator('.slide-card').nth(8).click();
   await page.waitForTimeout(1_700);
   const canvas = page.getByLabel('Interactive 3D presentation canvas');
   const outputGeometry = {
@@ -401,7 +401,7 @@ test('keeps focused background bodies near convergence in both SBS modes', { tag
       return [hasPixels(0, half), hasPixels(half, (overlay as HTMLCanvasElement).width - half)];
     })).toEqual([true, true]);
     const base64 = (await canvas.screenshot()).toString('base64');
-    const warmPixels = await page.evaluate(async (encoded) => {
+    const warmBodies = await page.evaluate(async (encoded) => {
       const image = new Image();
       image.src = `data:image/png;base64,${encoded}`;
       await image.decode();
@@ -411,26 +411,30 @@ test('keeps focused background bodies near convergence in both SBS modes', { tag
       const context = sample.getContext('2d')!;
       context.drawImage(image, 0, 0);
       const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
-      return [0.25, 0.75].map((center) => {
-        const left = Math.floor(sample.width * (center - 0.06));
-        const right = Math.ceil(sample.width * (center + 0.06));
-        const top = Math.floor(sample.height * 0.38);
-        const bottom = Math.ceil(sample.height * 0.62);
+      const halfWidth = Math.floor(sample.width / 2);
+      return [0, halfWidth].map((left) => {
+        const right = left + halfWidth;
         let count = 0;
-        for (let y = top; y < bottom; y += 1) {
+        let xTotal = 0;
+        for (let y = 0; y < sample.height; y += 1) {
           for (let x = left; x < right; x += 1) {
             const offset = (y * sample.width + x) * 4;
             const red = pixels[offset]!;
             const green = pixels[offset + 1]!;
             const blue = pixels[offset + 2]!;
-            if (red > 45 && green > 20 && red > green * 1.05 && red > blue * 1.35) count += 1;
+            if (red > 45 && green > 20 && red > green * 1.05 && red > blue * 1.35) {
+              count += 1;
+              xTotal += x - left;
+            }
           }
         }
-        return count;
+        return { count, averageX: count === 0 ? 0 : xTotal / count / halfWidth };
       });
     }, base64);
-    expect(warmPixels[0]).toBeGreaterThan(100);
-    expect(warmPixels[1]).toBeGreaterThan(100);
+    for (const body of warmBodies) {
+      expect(body.count).toBeGreaterThan(100);
+      expect(body.averageX).toBeGreaterThan(0.52);
+    }
   }
   expect(consoleErrors).toEqual([]);
 });
@@ -480,7 +484,7 @@ test('fills and edits a picture placeholder from the inspector', async ({ page }
   await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
   await page.getByLabel('Slide layout').selectOption('layout-picture-caption');
   await page.getByRole('button', { name: /Add slide/ }).click();
-  await expect(page.locator('.slide-card')).toHaveCount(16);
+  await expect(page.locator('.slide-card')).toHaveCount(11);
   await page.locator('.layer-list button').filter({ hasText: 'Picture' }).click();
   await expect(page.getByRole('button', { name: 'Choose picture…' })).toBeVisible();
 
@@ -524,7 +528,7 @@ test('creates slides from the standard PowerPoint layout catalog', async ({ page
     ['layout-picture-caption', 3],
   ] as const;
   const layoutSelect = page.getByLabel('Slide layout');
-  let slideCount = 15;
+  let slideCount = 10;
   for (const [layoutId, elementCount] of layouts) {
     await layoutSelect.selectOption(layoutId);
     await page.getByRole('button', { name: /Add slide/ }).click();
