@@ -218,6 +218,7 @@ test('edits planar slide geometry and spatial properties', async ({ page }) => {
   await spatial.click();
   await expect(page.getByLabel('Thickness value')).toHaveValue('0');
   await page.getByLabel('Thickness value').fill('0.1');
+  await expect(page.getByLabel('Thickness value')).toHaveValue('0.1');
   await page.getByLabel('Thickness value').fill('0');
   await expect(page.getByLabel('Thickness value')).toHaveValue('0');
   await page.getByLabel('Depth value').fill('0.24');
