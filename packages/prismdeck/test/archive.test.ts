@@ -314,6 +314,7 @@ describe('PrismDeck HTML package', () => {
 
     expect(saved.type).toBe('text/html;charset=utf-8');
     expect(html).toContain(DEFAULT_PRISMDECK_CDN_URL);
+    expect(DEFAULT_PRISMDECK_CDN_URL).toBe('https://cdn.jsdelivr.net/npm/prismdeckjs@0.4.0/dist/prism-deck.min.js');
     expect(html).toContain('type="application/vnd.prismdeck+zip;base64"');
     expect(html).toContain('id="slide-semantics"');
     expect(html).toContain("document.createElement(cell.header ? 'th' : 'td')");
