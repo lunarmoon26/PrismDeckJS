@@ -34,6 +34,13 @@
 - Added a CyberHUD-calibrated distance-aware stereo rig for persistent
   backgrounds so close planet focus remains comfortable and independently
   converged from authored slide UI in full and half SBS.
+- Added schema `0.5.0` Earth cloud-opacity and ocean-specular texture slots,
+  CyberHUD-derived demo maps, and transition-synchronized planet focus scaling.
+- Rescaled the solar-detail group to CyberHUD's Galactic proportion and
+  recalibrated close focus cameras so Sol is only revealed by a true magnitude
+  shift from the Milky Way overview.
+- Matched CyberHUD's translucent Sol shell with a luminous core and corona, and
+  made the opening demo slide animate when selected from another slide.
 
 ## 0.1.0 - 2026-08-22
 

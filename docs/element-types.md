@@ -31,9 +31,10 @@ weights, so a table remains editable and scales with its element frame.
 
 Version `0.2.0` introduced these exact chart and table shapes. Package boundaries
 migrate `0.1.0` category/series charts and string-matrix tables into the semantic
-model before validation. Version `0.3.0` adds the optional background scene and
+model before validation. Version `0.3.0` adds the optional background scene,
 version `0.4.0` adds bounded solar-system assets plus top/tilt and body-focus
-camera framing. Newly saved packages always use `0.4.0`; `0.1.0` through `0.3.0`
+camera framing, and version `0.5.0` adds bounded Earth cloud and ocean-specular
+asset slots. Newly saved packages always use `0.5.0`; `0.1.0` through `0.4.0`
 packages advance without changing their slide content.
 
 ## Planar and extruded elements
@@ -65,8 +66,9 @@ slide's background unless the caller provides an explicit color.
 behind every slide. The `galaxy` scene accepts only bounded declarative values:
 `seed`, `starCount`, `rotationDegreesPerSecond`, `coreColor`, `armColor`, and
 `solColor`. `backdropAssetId` may reference one inert packaged image; it is not a
-URL. An optional solar system accepts fixed asset-ID slots for body, Saturn-ring,
-and inward-facing star-sphere textures. The scene persists across slide
+URL. An optional solar system accepts fixed asset-ID slots for body, Earth cloud
+opacity, Earth ocean-specular, Saturn-ring, and inward-facing star-sphere
+textures. The scene persists across slide
 navigation, advances from the player frame clock, renders through the same mono
 or stereo cameras, and is recreated only when the deck or scene configuration
 changes. It never contains shader source, module URLs, callbacks, or other
@@ -80,7 +82,9 @@ The star and haze raster ranges, spectral weights, exposure, and shader bloom
 approximation use CyberHUD's default Galaxy configuration.
 
 `DeckSlide.backgroundCamera` contains bounded `x`, `y`, and `z` translations plus
-an optional `transitionDurationMs`. Solar-system scenes also accept a bounded
+an optional `transitionDurationMs`. Its distance is bounded from `0.001` to
+`100` scene units so the solar-detail group can retain its Galactic proportion
+while a focus camera moves close enough to inspect it. Solar-system scenes also accept a bounded
 focus distance, `top`, `tilt`, or `horizon` view, a body focus key, and bounded
 focus-orbit azimuth/elevation. Declaring a body focus requires
 `backgroundScene.solarSystem`; declaring any background camera requires a

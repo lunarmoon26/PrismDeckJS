@@ -125,6 +125,7 @@ test('loads the animated universe deck and exercises studio controls', async ({ 
   expect(capture.suggestedFilename()).toBe('A-galaxy-in-numbers-mono.png');
   await page.locator('.slide-card').first().click();
   await expect(page.locator('.slide-card').first()).toHaveClass(/is-active/);
+  await expect(page.locator('.stage__overlay')).toHaveAttribute('data-transition-count', '2');
   expect(consoleErrors).toEqual([]);
 });
 
@@ -140,8 +141,11 @@ test('edits planar slide geometry and spatial properties', async ({ page }) => {
   await page.getByLabel('Scene background color').fill('#123456');
   await expect(page.locator('.slide-card__preview').first()).toHaveCSS('background-color', 'rgb(18, 52, 86)');
   await expect(page.getByLabel('Demo deck theme')).toBeEnabled();
+  await expect(page.getByLabel('Transition duration')).toBeEnabled();
+  await page.getByLabel('Slide transition').selectOption('cut');
   await expect(page.getByLabel('Transition duration')).toBeDisabled();
   await page.getByLabel('Slide transition').selectOption('fade');
+  await expect(page.getByLabel('Transition duration')).toBeEnabled();
   await page.getByLabel('Transition duration').fill('650');
   await expect(page.getByLabel('Transition duration')).toHaveValue('650');
 

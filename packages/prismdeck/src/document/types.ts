@@ -1,9 +1,10 @@
-export const PRISMDECK_SCHEMA_VERSION = '0.4.0' as const;
+export const PRISMDECK_SCHEMA_VERSION = '0.5.0' as const;
 export const LEGACY_PRISMDECK_SCHEMA_VERSION = '0.1.0' as const;
-export const PREVIOUS_PRISMDECK_SCHEMA_VERSION = '0.3.0' as const;
+export const PREVIOUS_PRISMDECK_SCHEMA_VERSION = '0.4.0' as const;
 export const LEGACY_PRISMDECK_SCHEMA_VERSIONS = [
   LEGACY_PRISMDECK_SCHEMA_VERSION,
   '0.2.0',
+  '0.3.0',
   PREVIOUS_PRISMDECK_SCHEMA_VERSION,
 ] as const;
 export const PRISMDECK_MIME_TYPE = 'application/vnd.prismdeck+zip' as const;
@@ -26,7 +27,7 @@ export interface DeckSize {
 }
 
 export type SolarBodyKey = 'sol' | 'mercury' | 'venus' | 'earth' | 'luna' | 'mars' | 'jupiter' | 'saturn' | 'uranus' | 'neptune';
-export type GalaxySolarTextureKey = SolarBodyKey | 'saturnRing' | 'stars';
+export type GalaxySolarTextureKey = SolarBodyKey | 'earthClouds' | 'earthSpecular' | 'saturnRing' | 'stars';
 
 export interface GalaxySolarSystem {
   textureAssetIds?: Partial<Record<GalaxySolarTextureKey, string>>;

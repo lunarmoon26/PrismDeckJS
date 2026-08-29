@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://prismdeckjs.dev/schema/prismdeck-0.4.0.json",
+  "$id": "https://prismdeckjs.dev/schema/prismdeck-0.5.0.json",
   "title": "PrismDeck document",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "kind", "metadata", "size", "layouts", "slides"],
   "properties": {
-    "schemaVersion": { "const": "0.4.0" },
+    "schemaVersion": { "const": "0.5.0" },
     "id": { "$ref": "#/$defs/id" },
     "kind": { "enum": ["presentation", "template"] },
     "metadata": {
@@ -117,6 +117,8 @@
         "mercury": { "$ref": "#/$defs/id" },
         "venus": { "$ref": "#/$defs/id" },
         "earth": { "$ref": "#/$defs/id" },
+        "earthClouds": { "$ref": "#/$defs/id" },
+        "earthSpecular": { "$ref": "#/$defs/id" },
         "luna": { "$ref": "#/$defs/id" },
         "mars": { "$ref": "#/$defs/id" },
         "jupiter": { "$ref": "#/$defs/id" },
@@ -493,7 +495,7 @@
         "x": { "type": "number", "minimum": -20, "maximum": 20 },
         "y": { "type": "number", "minimum": -20, "maximum": 20 },
         "z": { "type": "number", "minimum": -10, "maximum": 10 },
-        "distance": { "type": "number", "minimum": 0.16, "maximum": 100 },
+        "distance": { "type": "number", "minimum": 0.001, "maximum": 100 },
         "view": { "enum": ["top", "tilt", "horizon"] },
         "focusBody": { "enum": ["sol", "mercury", "venus", "earth", "luna", "mars", "jupiter", "saturn", "uranus", "neptune"] },
         "orbitAzimuthDegrees": { "type": "number", "minimum": -180, "maximum": 180 },
