@@ -1423,13 +1423,14 @@ export class DeckRenderer {
     const actualAspect = this.width / this.height;
     this.backgroundCamera.fov = this.fovDegrees;
     this.backgroundCamera.aspect = this.outputMode === 'mono' ? actualAspect : OUTPUT_PRESETS[this.outputMode].logicalEyeAspect;
-    this.backgroundCamera.near = 0.1;
     this.backgroundCamera.far = 200;
     this.backgroundCamera.position.set(0, 0, this.cameraDistance);
     this.backgroundCamera.quaternion.identity();
+    const sceneDistance = this.backgroundScene?.stereoSceneDistance() ?? this.cameraDistance;
+    const backgroundNear = Math.max(0.001, Math.min(0.1, sceneDistance * 0.1));
+    this.backgroundCamera.near = backgroundNear;
     this.backgroundCamera.updateProjectionMatrix();
     this.backgroundCamera.updateMatrixWorld(true);
-    const sceneDistance = this.backgroundScene?.stereoSceneDistance() ?? this.cameraDistance;
     const ratio = logarithmicStereoEyeSeparationRatio(
       sceneDistance,
       MIN_BACKGROUND_STEREO_SCENE_DISTANCE,
@@ -1440,7 +1441,7 @@ export class DeckRenderer {
     );
     configureStereoCameraRig(this.backgroundLeftCamera, this.backgroundRightCamera, {
       fovDegrees: this.fovDegrees,
-      near: 0.1,
+      near: backgroundNear,
       far: 200,
       distance: this.cameraDistance,
       convergenceDistance: sceneDistance,

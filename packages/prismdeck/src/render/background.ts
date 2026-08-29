@@ -4,12 +4,14 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  DataTexture,
   DoubleSide,
   Euler,
   Group,
   LineBasicMaterial,
   LineDashedMaterial,
   LineLoop,
+  LinearFilter,
   Mesh,
   MeshBasicMaterial,
   Matrix4,
@@ -18,10 +20,14 @@ import {
   Points,
   Quaternion,
   RingGeometry,
+  RGBAFormat,
   ShaderMaterial,
   SphereGeometry,
+  Sprite,
+  SpriteMaterial,
   SRGBColorSpace,
   Texture,
+  UnsignedByteType,
   Vector3,
 } from 'three';
 
@@ -612,9 +618,9 @@ function solarOrbitDisplayRadius(body: SolarBodyModel): number {
   return body.parent === 'earth' ? 0.23 : 0.45 + Math.log1p(body.semiMajorAxis) * 1.15;
 }
 
-function solarBodyMinimumCameraDistance(key: SolarBodyKey): number {
-  if (key === 'sol') return SOL_DISPLAY_RADIUS + 0.12;
-  return (SOLAR_BODIES.find((body) => body.key === key)?.displayRadius ?? 0.04) + 0.12;
+function solarBodyMinimumCameraDistance(key: SolarBodyKey, displayScale: number): number {
+  if (key === 'sol') return (SOL_DISPLAY_RADIUS + 0.12) * displayScale;
+  return ((SOLAR_BODIES.find((body) => body.key === key)?.displayRadius ?? 0.04) + 0.12) * displayScale;
 }
 
 function solarOrbitPosition(body: SolarBodyModel, angle: number, target: Vector3): Vector3 {
@@ -657,38 +663,158 @@ function solarPlanetMaterial(color: string): ShaderMaterial {
       baseColor: { value: new Color(color) },
       surfaceMap: { value: null },
       hasSurfaceMap: { value: 0 },
+      specularMap: { value: null },
+      hasSpecularMap: { value: 0 },
       sunDirection: { value: new Vector3(0, 0, 1) },
     },
     vertexShader: `
       varying vec2 surfaceUv;
       varying vec3 surfaceNormal;
+      varying vec3 surfaceViewPosition;
+      varying vec3 viewSunDirection;
+      uniform vec3 sunDirection;
       void main() {
         surfaceUv = uv;
-        surfaceNormal = normalize(normal);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        surfaceNormal = normalize(normalMatrix * normal);
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        surfaceViewPosition = viewPosition.xyz;
+        viewSunDirection = normalize(mat3(modelViewMatrix) * sunDirection);
+        gl_Position = projectionMatrix * viewPosition;
       }
     `,
     fragmentShader: `
       uniform vec3 baseColor;
       uniform sampler2D surfaceMap;
       uniform float hasSurfaceMap;
-      uniform vec3 sunDirection;
+      uniform sampler2D specularMap;
+      uniform float hasSpecularMap;
       varying vec2 surfaceUv;
       varying vec3 surfaceNormal;
+      varying vec3 surfaceViewPosition;
+      varying vec3 viewSunDirection;
       void main() {
         vec3 albedo = baseColor;
         if (hasSurfaceMap > 0.5) {
           albedo = sRGBTransferEOTF(texture2D(surfaceMap, surfaceUv)).rgb;
         }
-        float facing = dot(normalize(surfaceNormal), normalize(sunDirection));
+        vec3 normal = normalize(surfaceNormal);
+        vec3 sun = normalize(viewSunDirection);
+        float facing = dot(normal, sun);
         float daylight = smoothstep(-0.08, 0.14, facing);
         float diffuse = max(0.0, facing);
-        vec3 outgoingLight = albedo * (0.045 + daylight * 0.18 + diffuse * 0.92);
+        vec3 halfVector = normalize(sun + normalize(-surfaceViewPosition));
+        float specularMask = hasSpecularMap > 0.5 ? texture2D(specularMap, surfaceUv).r : 0.0;
+        float specular = pow(max(dot(normal, halfVector), 0.0), 28.0) * specularMask * diffuse * 0.58;
+        vec3 outgoingLight = albedo * (0.045 + daylight * 0.18 + diffuse * 0.92) + vec3(specular);
         gl_FragColor = vec4(outgoingLight, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }
     `,
+  });
+}
+
+function solarCoreTexture(): DataTexture {
+  const size = 64;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const horizontal = (x + 0.5) / size * 2 - 1;
+      const vertical = (y + 0.5) / size * 2 - 1;
+      const radius = Math.hypot(horizontal, vertical);
+      const glow = Math.exp(-radius * radius * 7);
+      const rays = Math.max(
+        Math.exp(-(horizontal * horizontal / 0.003 + vertical * vertical / 0.65)),
+        Math.exp(-(vertical * vertical / 0.003 + horizontal * horizontal / 0.65)),
+      );
+      const offset = (y * size + x) * 4;
+      data[offset] = 255;
+      data[offset + 1] = 224;
+      data[offset + 2] = 152;
+      data[offset + 3] = Math.round(Math.min(1, glow + rays * 0.35) * 255);
+    }
+  }
+  const texture = new DataTexture(data, size, size, RGBAFormat, UnsignedByteType);
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function solarCore(radius: number): { object: Group; texture: DataTexture } {
+  const texture = solarCoreTexture();
+  const object = new Group();
+  object.name = 'PrismDeck Sol core';
+  const corona = new Sprite(new SpriteMaterial({
+    color: new Color(1.7, 1.3, 0.65),
+    map: texture,
+    transparent: true,
+    opacity: 0.48,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  }));
+  corona.name = 'PrismDeck Sol corona';
+  corona.scale.setScalar(radius * 8);
+  corona.renderOrder = -5;
+  const core = new Sprite(new SpriteMaterial({
+    color: new Color(2, 1.55, 0.75),
+    map: texture,
+    transparent: true,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  }));
+  core.name = 'PrismDeck Sol core sprite';
+  core.scale.setScalar(radius * 2);
+  core.renderOrder = -4;
+  object.add(corona, core);
+  return { object, texture };
+}
+
+function earthCloudMaterial(): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: {
+      cloudMap: { value: null },
+      hasCloudMap: { value: 0 },
+      sunDirection: { value: new Vector3(0, 0, 1) },
+    },
+    vertexShader: `
+      varying vec2 cloudUv;
+      varying vec3 cloudNormal;
+      varying vec3 cloudViewPosition;
+      varying vec3 viewSunDirection;
+      uniform vec3 sunDirection;
+      void main() {
+        cloudUv = uv;
+        cloudNormal = normalize(normalMatrix * normal);
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        cloudViewPosition = viewPosition.xyz;
+        viewSunDirection = normalize(mat3(modelViewMatrix) * sunDirection);
+        gl_Position = projectionMatrix * viewPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D cloudMap;
+      uniform float hasCloudMap;
+      varying vec2 cloudUv;
+      varying vec3 cloudNormal;
+      varying vec3 cloudViewPosition;
+      varying vec3 viewSunDirection;
+      void main() {
+        float cloud = hasCloudMap > 0.5 ? texture2D(cloudMap, cloudUv).r : 0.0;
+        if (cloud < 0.01) discard;
+        vec3 normal = normalize(cloudNormal);
+        float diffuse = max(dot(normal, normalize(viewSunDirection)), 0.0);
+        float limb = pow(max(0.0, 1.0 - abs(dot(normal, normalize(-cloudViewPosition)))), 2.0);
+        vec3 outgoingLight = vec3(0.34 + diffuse * 0.66 + limb * 0.12);
+        gl_FragColor = vec4(outgoingLight, cloud * 0.72);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
   });
 }
 
@@ -704,14 +830,14 @@ interface SolarSystemRuntime {
     up: Vector3,
   ): void;
   centerSkyAt(cameraPosition: Vector3): void;
-  setFocusBody(key: SolarBodyKey | undefined): void;
+  setFocusBody(key: SolarBodyKey | undefined, progress?: number): void;
   setDetailVisible(visible: boolean): void;
   setTexture(key: GalaxySolarTextureKey, image: HTMLImageElement): void;
   update(elapsedSeconds: number): void;
   dispose(): void;
 }
 
-function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): SolarSystemRuntime {
+function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number, displayScale: number): SolarSystemRuntime {
   const object = new Group();
   object.name = 'PrismDeck solar system';
   object.position.set(x, y, 0.2);
@@ -723,9 +849,13 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
   object.quaternion.setFromAxisAngle(eclipticNode, radians(GALACTIC_ECLIPTIC_INCLINATION_DEGREES));
   object.visible = false;
 
+  const detail = new Group();
+  detail.name = 'PrismDeck solar detail';
+  detail.scale.setScalar(displayScale);
+  object.add(detail);
   const orbitGroup = new Group();
   orbitGroup.name = 'PrismDeck solar orbits';
-  object.add(orbitGroup);
+  detail.add(orbitGroup);
   const bodies = new Map<SolarBodyKey, Group>();
   const surfaces = new Map<SolarBodyKey, Mesh<SphereGeometry, MeshBasicMaterial | ShaderMaterial>>();
   const spins = new Map<SolarBodyKey, Group>();
@@ -734,6 +864,11 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
   const focusRight = new Vector3();
   const inverseSpin = new Quaternion();
   const inverseEclipticRotation = object.quaternion.clone().invert();
+  const focusStartScales = new Map<SolarBodyKey, number>();
+  let earthCloudShell: Mesh<SphereGeometry, ShaderMaterial> | undefined;
+  let solCoreTexture: Texture | undefined;
+  let focusTarget: SolarBodyKey | undefined;
+  let hasFocusTarget = false;
   let lunaOrbit: LineLoop | undefined;
   let saturnRing: Mesh<RingGeometry, MeshBasicMaterial> | undefined;
   const skyGeometry = new SphereGeometry(SOLAR_SKY_SPHERE_RADIUS, 48, 24);
@@ -761,17 +896,36 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
     const geometry = new SphereGeometry(radius, 24, 16);
     geometry.rotateX(Math.PI / 2);
     const material = sun
-      ? new MeshBasicMaterial({ color: new Color(1.15, 0.9, 0.55), transparent: true, opacity: 0.82 })
+      ? new MeshBasicMaterial({
+        color: new Color(1.15, 0.9, 0.55),
+        transparent: true,
+        opacity: 0.82,
+        depthWrite: true,
+        toneMapped: false,
+      })
       : solarPlanetMaterial(color);
     const surface = new Mesh(geometry, material);
     surface.name = `PrismDeck ${key} surface`;
     surface.renderOrder = -2;
     spin.add(surface);
+    if (sun) {
+      const core = solarCore(radius * 0.8);
+      solCoreTexture = core.texture;
+      spin.add(core.object);
+    }
+    if (key === 'earth') {
+      const cloudGeometry = new SphereGeometry(radius * 1.012, 24, 16);
+      cloudGeometry.rotateX(Math.PI / 2);
+      earthCloudShell = new Mesh(cloudGeometry, earthCloudMaterial());
+      earthCloudShell.name = 'PrismDeck Earth clouds';
+      earthCloudShell.renderOrder = -1;
+      spin.add(earthCloudShell);
+    }
     body.add(spin);
     spins.set(key, spin);
     surfaces.set(key, surface);
     bodies.set(key, body);
-    object.add(body);
+    detail.add(body);
     return body;
   };
 
@@ -781,7 +935,7 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
     const orbit = createSolarOrbit(body, scene.armColor);
     if (body.parent === 'earth') {
       lunaOrbit = orbit;
-      object.add(orbit);
+      detail.add(orbit);
     } else {
       orbitGroup.add(orbit);
     }
@@ -837,6 +991,13 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
       inverseSpin.copy(spin.quaternion).invert();
       sunDirection.applyQuaternion(inverseSpin).normalize();
     }
+    if (earthCloudShell) {
+      const earthSpin = spins.get('earth')!;
+      const sunDirection = earthCloudShell.material.uniforms.sunDirection!.value as Vector3;
+      sunDirection.copy(bodies.get('earth')!.position).multiplyScalar(-1);
+      inverseSpin.copy(earthSpin.quaternion).invert();
+      sunDirection.applyQuaternion(inverseSpin).normalize();
+    }
   };
   update(0);
 
@@ -846,12 +1007,12 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
     focusPosition(key, target) {
       target.copy(object.position);
       const body = bodies.get(key);
-      if (body) target.add(point.copy(body.position).applyQuaternion(object.quaternion));
+      if (body) target.add(point.copy(body.position).multiplyScalar(displayScale).applyQuaternion(object.quaternion));
       return target;
     },
     focusCameraOrientation(key, azimuthDegrees, elevationDegrees, offset, up) {
       const body = bodies.get(key);
-      if (body && key !== 'sol') offset.copy(body.position).multiplyScalar(-1);
+      if (body && key !== 'sol') offset.copy(body.position).multiplyScalar(-displayScale);
       else offset.set(0, -1, 0);
       up.set(0, 0, 1).applyQuaternion(object.quaternion).normalize();
       offset.applyQuaternion(object.quaternion);
@@ -865,11 +1026,18 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
     centerSkyAt(cameraPosition) {
       skySphere.position.copy(cameraPosition).sub(object.position).applyQuaternion(inverseEclipticRotation);
     },
-    setFocusBody(key) {
+    setFocusBody(key, progress = 1) {
+      if (!hasFocusTarget || key !== focusTarget) {
+        for (const [bodyKey, body] of bodies) focusStartScales.set(bodyKey, body.scale.x);
+        focusTarget = key;
+        hasFocusTarget = true;
+      }
       for (const [bodyKey, body] of bodies) {
-        const scale = bodyKey === 'sol'
+        const targetScale = bodyKey === 'sol'
           ? 1
           : bodyKey === key ? SOLAR_FOCUSED_BODY_SCALE : SOLAR_OVERVIEW_BODY_SCALE;
+        const startScale = focusStartScales.get(bodyKey) ?? targetScale;
+        const scale = startScale + (targetScale - startScale) * progress;
         body.scale.setScalar(scale);
       }
     },
@@ -880,7 +1048,7 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
     setTexture(key, image) {
       textures.get(key)?.dispose();
       const texture = new Texture(image);
-      if (key !== 'saturnRing') texture.colorSpace = SRGBColorSpace;
+      if (key !== 'earthClouds' && key !== 'earthSpecular' && key !== 'saturnRing') texture.colorSpace = SRGBColorSpace;
       texture.needsUpdate = true;
       textures.set(key, texture);
       if (key === 'stars') {
@@ -896,7 +1064,22 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
         }
         return;
       }
-      const surface = surfaces.get(key);
+      if (key === 'earthClouds') {
+        if (earthCloudShell) {
+          earthCloudShell.material.uniforms.cloudMap!.value = texture;
+          earthCloudShell.material.uniforms.hasCloudMap!.value = 1;
+        }
+        return;
+      }
+      if (key === 'earthSpecular') {
+        const earthSurface = surfaces.get('earth');
+        if (earthSurface?.material instanceof ShaderMaterial) {
+          earthSurface.material.uniforms.specularMap!.value = texture;
+          earthSurface.material.uniforms.hasSpecularMap!.value = 1;
+        }
+        return;
+      }
+      const surface = surfaces.get(key as SolarBodyKey);
       if (!surface) return;
       if (surface.material instanceof ShaderMaterial) {
         surface.material.uniforms.surfaceMap!.value = texture;
@@ -914,10 +1097,13 @@ function createSolarSystem(scene: GalaxyBackgroundScene, x: number, y: number): 
           child.geometry.dispose();
           const materials = Array.isArray(child.material) ? child.material : [child.material];
           for (const material of materials) material.dispose();
+        } else if (child instanceof Sprite) {
+          child.material.dispose();
         }
       });
       for (const texture of textures.values()) texture.dispose();
       textures.clear();
+      solCoreTexture?.dispose();
       object.clear();
     },
   };
@@ -1065,7 +1251,8 @@ function createGalaxy(scene: GalaxyBackgroundScene, size: DeckSize): BackgroundS
   sol.name = 'PrismDeck Sol';
   sol.position.set(centerX, -solOrbitRadius, 0.2);
   sol.renderOrder = -6;
-  const solarSystem = scene.solarSystem ? createSolarSystem(scene, centerX, -solOrbitRadius) : undefined;
+  const solarSystem = scene.solarSystem ? createSolarSystem(scene, centerX, -solOrbitRadius, presentationScale) : undefined;
+  const solarDetailCameraDistance = SOLAR_DETAIL_CAMERA_DISTANCE * presentationScale;
 
   const object = new Group();
   object.name = 'PrismDeck CyberHUD galaxy background';
@@ -1107,6 +1294,7 @@ function createGalaxy(scene: GalaxyBackgroundScene, size: DeckSize): BackgroundS
   let targetCameraFocusBody: SolarBodyKey | undefined;
   let cameraTransitionDuration = 0;
   let cameraTransitionStartedAt: number | undefined;
+  let focusScaleProgress = 1;
   let lastFlowUnits: number | undefined;
   let lastParticleFlowUpdate: number | undefined;
   const resolveTargetCamera = (): void => {
@@ -1149,7 +1337,7 @@ function createGalaxy(scene: GalaxyBackgroundScene, size: DeckSize): BackgroundS
       .applyQuaternion(inverseCameraRotation);
     solarSystem?.centerSkyAt(backgroundCameraPosition);
   };
-  const applyCamera = (): void => {
+  const applyCamera = (focusProgress = 1): void => {
     object.quaternion.copy(cameraRotation);
     transformedCameraTarget.copy(cameraTarget).applyQuaternion(cameraRotation);
     object.position.set(
@@ -1158,8 +1346,8 @@ function createGalaxy(scene: GalaxyBackgroundScene, size: DeckSize): BackgroundS
       renderCameraDistance - cameraDistance - transformedCameraTarget.z,
     );
     centerSkyAtRenderEye();
-    const showsSolarDetail = Boolean(solarSystem && (cameraFocusBody || targetCameraFocusBody || cameraDistance <= SOLAR_DETAIL_CAMERA_DISTANCE));
-    solarSystem?.setFocusBody(cameraFocusBody ?? targetCameraFocusBody);
+    const showsSolarDetail = Boolean(solarSystem && (cameraFocusBody || targetCameraFocusBody || cameraDistance <= solarDetailCameraDistance));
+    solarSystem?.setFocusBody(targetCameraFocusBody, focusProgress);
     solarSystem?.setDetailVisible(showsSolarDetail);
     sol.visible = !showsSolarDetail;
     applyGalaxyLayerOpacity();
@@ -1194,11 +1382,12 @@ function createGalaxy(scene: GalaxyBackgroundScene, size: DeckSize): BackgroundS
       targetCameraDistanceIsExplicit = camera?.distance !== undefined || targetCameraFocusBody !== undefined;
       targetCameraDistance = camera?.distance ?? (targetCameraFocusBody ? 4 : renderCameraDistance + 3.2 + (camera?.z ?? 0));
       if (targetCameraFocusBody) {
-        targetCameraDistance = Math.max(targetCameraDistance, solarBodyMinimumCameraDistance(targetCameraFocusBody));
+        targetCameraDistance = Math.max(targetCameraDistance, solarBodyMinimumCameraDistance(targetCameraFocusBody, presentationScale));
       }
       targetGalaxyLayerOpacity = solarSystem && targetCameraFocusBody ? 0 : 1;
       cameraTransitionDuration = Math.max(0, durationSeconds);
       cameraTransitionStartedAt = undefined;
+      focusScaleProgress = cameraTransitionDuration > 0 ? 0 : 1;
       if (cameraTransitionDuration === 0) {
         cameraTarget.copy(targetCameraTarget);
         cameraDistance = targetCameraDistance;
@@ -1218,10 +1407,10 @@ function createGalaxy(scene: GalaxyBackgroundScene, size: DeckSize): BackgroundS
       if (!cameraDistanceIsExplicit) cameraDistance += distanceChange;
       if (!targetCameraDistanceIsExplicit) targetCameraDistance += distanceChange;
       renderCameraDistance = safeDistance;
-      applyCamera();
+      applyCamera(focusScaleProgress);
     },
     stereoSceneDistance() {
-      return Math.max(0.16, cameraDistance);
+      return Math.max(0.001, cameraDistance);
     },
     setRenderEyeOffset(offsetX) {
       renderEyeOffsetX = Number.isFinite(offsetX) ? offsetX : 0;
@@ -1270,6 +1459,7 @@ function createGalaxy(scene: GalaxyBackgroundScene, size: DeckSize): BackgroundS
         cameraTransitionStartedAt ??= elapsedSeconds;
         const progress = clamp((elapsedSeconds - cameraTransitionStartedAt) / cameraTransitionDuration, 0, 1);
         const eased = progress * progress * (3 - 2 * progress);
+        focusScaleProgress = eased;
         cameraTarget.lerpVectors(startCameraTarget, targetCameraTarget, eased);
         cameraDistance = startCameraDistance + (targetCameraDistance - startCameraDistance) * eased;
         cameraRotation.slerpQuaternions(startCameraRotation, targetCameraRotation, eased);
@@ -1279,7 +1469,7 @@ function createGalaxy(scene: GalaxyBackgroundScene, size: DeckSize): BackgroundS
           cameraDistanceIsExplicit = targetCameraDistanceIsExplicit;
           cameraFocusBody = targetCameraFocusBody;
         }
-        applyCamera();
+        applyCamera(eased);
       } else if (cameraFocusBody && solarSystem) {
         solarSystem.focusPosition(cameraFocusBody, cameraTarget).add(targetCameraOffset);
         cameraRotation.copy(targetCameraRotation);

@@ -22,6 +22,8 @@ import { createDefaultLayouts } from './layouts';
 import galaxyBackdropUrl from './assets/galaxy-backdrop.webp?url';
 import galaxyBackdropLicense from './assets/galaxy-backdrop-license.txt?raw';
 import solarEarthUrl from './assets/solar-earth.webp?url';
+import solarEarthCloudsUrl from './assets/solar-earth-clouds.jpg?url';
+import solarEarthSpecularUrl from './assets/solar-earth-specular.png?url';
 import solarJupiterUrl from './assets/solar-jupiter.webp?url';
 import solarLunaUrl from './assets/solar-luna.webp?url';
 import solarMarsUrl from './assets/solar-mars.webp?url';
@@ -42,6 +44,8 @@ const SOLAR_TEXTURES = {
   mercury: { id: 'solar-mercury', fileName: 'solar-mercury.webp', url: solarMercuryUrl },
   venus: { id: 'solar-venus', fileName: 'solar-venus.webp', url: solarVenusUrl },
   earth: { id: 'solar-earth', fileName: 'solar-earth.webp', url: solarEarthUrl },
+  earthClouds: { id: 'solar-earth-clouds', fileName: 'solar-earth-clouds.jpg', url: solarEarthCloudsUrl },
+  earthSpecular: { id: 'solar-earth-specular', fileName: 'solar-earth-specular.png', url: solarEarthSpecularUrl },
   luna: { id: 'solar-luna', fileName: 'solar-luna.webp', url: solarLunaUrl },
   mars: { id: 'solar-mars', fileName: 'solar-mars.webp', url: solarMarsUrl },
   jupiter: { id: 'solar-jupiter', fileName: 'solar-jupiter.webp', url: solarJupiterUrl },
@@ -396,19 +400,17 @@ export async function createDemoDeck(themeId: DeckThemeId = 'edge'): Promise<Loa
     { x: -1.8, y: 0.9, z: -1.3, view: 'tilt', transitionDurationMs: 1_400 },
     { x: 2.4, y: 0.5, z: -2.3, view: 'top', transitionDurationMs: 1_500 },
     { x: 0.6, y: -1.3, z: -3.2, view: 'tilt', transitionDurationMs: 1_600 },
-    { x: -0.2, y: 0, z: 0, distance: 9.5, view: 'tilt', focusBody: 'sol', transitionDurationMs: 2_600 },
-    { x: -0.32, y: 0.12, z: 0, distance: 1.8, view: 'horizon', focusBody: 'sol', orbitAzimuthDegrees: -42, orbitElevationDegrees: 8, transitionDurationMs: 2_200 },
-    { x: -0.25, y: 0.1, z: 0, distance: 11, view: 'top', focusBody: 'sol', transitionDurationMs: 1_800 },
-    { x: -0.4, y: 0.2, z: 0, distance: 9.5, view: 'tilt', focusBody: 'sol', transitionDurationMs: 1_600 },
-    { x: 0, y: 0.12, z: 0, distance: 0.56, view: 'horizon', focusBody: 'jupiter', orbitAzimuthDegrees: -58, orbitElevationDegrees: 10, transitionDurationMs: 1_900 },
-    { x: 0, y: -0.1, z: 0, distance: 0.42, view: 'horizon', focusBody: 'earth', orbitAzimuthDegrees: 58, orbitElevationDegrees: 4, transitionDurationMs: 1_900 },
+    { x: -0.006, y: 0, z: 0, distance: 0.27, view: 'tilt', focusBody: 'sol', transitionDurationMs: 2_600 },
+    { x: -0.009, y: 0.003, z: 0, distance: 0.05, view: 'horizon', focusBody: 'sol', orbitAzimuthDegrees: -42, orbitElevationDegrees: 8, transitionDurationMs: 2_200 },
+    { x: -0.007, y: 0.003, z: 0, distance: 0.31, view: 'top', focusBody: 'sol', transitionDurationMs: 1_800 },
+    { x: -0.011, y: 0.006, z: 0, distance: 0.27, view: 'tilt', focusBody: 'sol', transitionDurationMs: 1_600 },
+    { x: 0, y: 0.003, z: 0, distance: 0.016, view: 'horizon', focusBody: 'jupiter', orbitAzimuthDegrees: -58, orbitElevationDegrees: 10, transitionDurationMs: 1_900 },
+    { x: 0, y: -0.003, z: 0, distance: 0.012, view: 'horizon', focusBody: 'earth', orbitAzimuthDegrees: 58, orbitElevationDegrees: 4, transitionDurationMs: 1_900 },
   ];
 
   slides.forEach((deckSlide, index) => {
     deckSlide.backgroundCamera = backgroundCameras[index]!;
-    deckSlide.transition = index === 0
-      ? { type: 'cut', durationMs: 0 }
-      : { type: index === 4 ? 'fade' : index % 2 === 0 ? 'slide' : 'fade', durationMs: 520 };
+    deckSlide.transition = { type: index === 0 || index === 4 ? 'fade' : index % 2 === 0 ? 'slide' : 'fade', durationMs: 520 };
   });
 
   const packagedAssets = [
@@ -421,7 +423,7 @@ export async function createDemoDeck(themeId: DeckThemeId = 'edge'): Promise<Loa
     return [asset.id, {
       id: asset.id,
       fileName: asset.fileName,
-      mimeType: 'image/webp',
+      mimeType: asset.fileName.endsWith('.png') ? 'image/png' : asset.fileName.endsWith('.jpg') ? 'image/jpeg' : 'image/webp',
       data: new Uint8Array(await response.arrayBuffer()),
     }] as const;
   })));

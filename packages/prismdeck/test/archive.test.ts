@@ -229,6 +229,20 @@ describe('.prismdeck archive', () => {
     expect(loaded.document.slides).toEqual(previousDocument.slides);
   });
 
+  test('advances persisted 0.4.0 solar documents without changing slide content', async () => {
+    const previousDocument = JSON.parse(JSON.stringify(fixture().document)) as Record<string, unknown>;
+    previousDocument.schemaVersion = '0.4.0';
+    const slides = previousDocument.slides;
+    const manifest = { format: 'prismdeck', packageVersion: '0.4.0', document: 'deck.json', assets: [] };
+    const loaded = await loadPrismDeck(zipSync({
+      'manifest.json': strToU8(JSON.stringify(manifest)),
+      'deck.json': strToU8(JSON.stringify(previousDocument)),
+    }));
+
+    expect(loaded.document.schemaVersion).toBe(PRISMDECK_SCHEMA_VERSION);
+    expect(loaded.document.slides).toEqual(slides);
+  });
+
   test('rejects table cells that exceed the normalized grid', () => {
     const invalid = fixture().document;
     const table = invalid.slides[0]?.elements.find((element) => element.type === 'table');
@@ -265,6 +279,13 @@ describe('.prismdeck archive', () => {
     expect(() => validateDeckDocument(invalidOrbit)).toThrow('Invalid PrismDeck document');
   });
 
+  test('accepts close focus cameras for scaled solar-system detail', () => {
+    const valid = fixture().document;
+    valid.slides[0]!.backgroundCamera!.distance = 0.012;
+
+    expect(() => validateDeckDocument(valid)).not.toThrow();
+  });
+
   test('rejects unknown solar focus and texture keys', () => {
     const invalidFocus = fixture().document as unknown as { slides: Array<{ backgroundCamera: Record<string, unknown> }> };
     invalidFocus.slides[0]!.backgroundCamera.focusBody = 'pluto';
@@ -273,6 +294,17 @@ describe('.prismdeck archive', () => {
     const invalidTexture = fixture().document as unknown as { backgroundScene: { solarSystem: { textureAssetIds: Record<string, unknown> } } };
     invalidTexture.backgroundScene.solarSystem.textureAssetIds.pluto = 'pixel';
     expect(() => validateDeckDocument(invalidTexture)).toThrow('Invalid PrismDeck document');
+  });
+
+  test('accepts bounded Earth cloud and specular texture keys', () => {
+    const valid = fixture().document;
+    valid.backgroundScene!.solarSystem!.textureAssetIds = {
+      earth: 'pixel',
+      earthClouds: 'pixel',
+      earthSpecular: 'pixel',
+    };
+
+    expect(() => validateDeckDocument(valid)).not.toThrow();
   });
 
   test('requires a solar system when a slide focuses a solar body', () => {
@@ -314,7 +346,7 @@ describe('PrismDeck HTML package', () => {
 
     expect(saved.type).toBe('text/html;charset=utf-8');
     expect(html).toContain(DEFAULT_PRISMDECK_CDN_URL);
-    expect(DEFAULT_PRISMDECK_CDN_URL).toBe('https://cdn.jsdelivr.net/npm/prismdeckjs@0.4.0/dist/prism-deck.min.js');
+    expect(DEFAULT_PRISMDECK_CDN_URL).toBe('https://cdn.jsdelivr.net/npm/prismdeckjs@0.5.0/dist/prism-deck.min.js');
     expect(html).toContain('type="application/vnd.prismdeck+zip;base64"');
     expect(html).toContain('id="slide-semantics"');
     expect(html).toContain("document.createElement(cell.header ? 'th' : 'td')");

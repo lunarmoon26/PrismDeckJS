@@ -22,8 +22,8 @@ count, flow rate, two stellar colors, a Sol color, an optional packaged backdrop
 asset ID, and an optional nested solar system. Solar texture declarations map a
 fixed set of body and ring keys to package asset IDs; they cannot contain URLs or
 rendering instructions.
-This strict contract is schema version `0.4.0`; package boundaries advance
-existing `0.1.0` through `0.3.0` documents without changing their slide content.
+This strict contract is schema version `0.5.0`; package boundaries advance
+existing `0.1.0` through `0.4.0` documents without changing their slide content.
 
 The renderer owns one background runtime in a separate render scene beside its
 slide group. Slide changes rebuild only slide content. Deck replacement,
@@ -65,13 +65,17 @@ runtime. The core package does not bundle CyberHUD's NASA/JPL backdrop. Studio's
 demo packages an attributed WebP derivative in its deck asset store, displays the
 required credit, and preserves the source and policy record beside the asset.
 The demo also packages CC BY 4.0 Solar System Scope/NASA-derived overview maps
-for Sol, the planets, Luna, Saturn's rings, and the inward-facing solar sky. The
+for Sol, the planets, Luna, Saturn's rings, and the inward-facing solar sky,
+plus CyberHUD-derived Earth cloud-opacity and ocean-specular data maps. The
 renderer owns their textures, orbit geometry, solar illumination, and disposal.
-Planet materials derive their day/night illumination directly from
+Sol retains CyberHUD's translucent texture shell with a procedural luminous core
+and corona. Planet materials derive their day/night illumination directly from
 each body's vector to Sol instead of inheriting slide-scene lights. The ecliptic
 uses the J2000 60.188-degree inclination to the Galactic
-plane; both overview and focused planets reduce CyberHUD's intentionally
-exaggerated display radii, while focus remains larger for legibility. Slides
+plane. The solar-detail group uses CyberHUD's Galactic presentation scale, so a
+focused camera must cross the magnitude gap before a planet becomes legible.
+Focused planet scale still interpolates with the same smoothstep progress as its
+camera. Slides
 around Sol focus the actual nested bodies instead of leaving the narrative at a
 Galactic marker.
 

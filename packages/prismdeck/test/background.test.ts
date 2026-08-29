@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import {
+  AdditiveBlending,
   BackSide,
   BufferGeometry,
   Group,
@@ -8,6 +9,8 @@ import {
   MeshBasicMaterial,
   Points,
   ShaderMaterial,
+  Sprite,
+  SpriteMaterial,
   Texture,
   Vector3,
 } from 'three';
@@ -149,19 +152,42 @@ describe('persistent galaxy background', () => {
 
   test('tilts the persistent scene and reveals focused solar bodies', () => {
     const runtime = createBackgroundScene({ ...scene, solarSystem: {} }, size);
+    const solCoreTextureDisposed = vi.fn();
     try {
       const solarSystem = runtime.object.getObjectByName('PrismDeck solar system') as Group;
       const earth = runtime.object.getObjectByName('PrismDeck solar body earth') as Group;
       const jupiter = runtime.object.getObjectByName('PrismDeck solar body jupiter') as Group;
+      const solarDetail = runtime.object.getObjectByName('PrismDeck solar detail') as Group;
       const sky = runtime.object.getObjectByName('PrismDeck solar sky sphere') as Mesh<BufferGeometry, MeshBasicMaterial>;
+      const solSurface = runtime.object.getObjectByName('PrismDeck sol surface') as Mesh<BufferGeometry, MeshBasicMaterial>;
+      const solCore = runtime.object.getObjectByName('PrismDeck Sol core') as Group;
+      const solCorona = runtime.object.getObjectByName('PrismDeck Sol corona') as Sprite;
+      const solCoreSprite = runtime.object.getObjectByName('PrismDeck Sol core sprite') as Sprite;
       const earthSurface = runtime.object.getObjectByName('PrismDeck earth surface') as Mesh<BufferGeometry, ShaderMaterial>;
+      const earthClouds = runtime.object.getObjectByName('PrismDeck Earth clouds') as Mesh<BufferGeometry, ShaderMaterial>;
       const eclipticNorth = new Vector3(0, 0, 1).applyQuaternion(solarSystem.quaternion);
       expect(solarSystem.visible).toBe(false);
       expect(earth).toBeTruthy();
       expect(jupiter).toBeTruthy();
+      const galaxyRadius = Math.max(10, 10 * size.width / size.height) * 0.68;
+      const presentationScale = (galaxyRadius / 18.4) / (1_000 / ((5_000 / 46 * 1_280) / 3_261.56));
+      expect(solarDetail.scale.x).toBeCloseTo(presentationScale);
+      runtime.object.updateMatrixWorld(true);
+      expect(solSurface.getWorldScale(new Vector3()).x).toBeCloseTo(presentationScale);
+      expect(solSurface.material.transparent).toBe(true);
+      expect(solSurface.material.depthWrite).toBe(true);
+      expect(solSurface.material.toneMapped).toBe(false);
+      expect(solCore).toBeTruthy();
+      expect(solCorona.material).toBeInstanceOf(SpriteMaterial);
+      expect(solCorona.material.blending).toBe(AdditiveBlending);
+      expect(solCoreSprite.material.map).toBeInstanceOf(Texture);
+      (solCoreSprite.material.map as Texture).addEventListener('dispose', solCoreTextureDisposed);
       expect(eclipticNorth.angleTo(new Vector3(0, 0, 1)) * 180 / Math.PI).toBeCloseTo(60.188);
       expect(earthSurface.material).toBeInstanceOf(ShaderMaterial);
       expect(earthSurface.material.uniforms.sunDirection!.value).toBeInstanceOf(Vector3);
+      expect(earthClouds.material).toBeInstanceOf(ShaderMaterial);
+      expect(earthClouds.material.transparent).toBe(true);
+      expect(earthClouds.material.depthWrite).toBe(false);
       expect(jupiter.scale.x).toBeCloseTo(0.42);
       expect(sky.material.side).toBe(BackSide);
       expect(sky.visible).toBe(false);
@@ -173,13 +199,21 @@ describe('persistent galaxy background', () => {
       expect(runtime.object.rotation.x).toBeCloseTo(-Math.PI / 8);
       expect(runtime.object.rotation.z).toBeCloseTo(-Math.PI / 72);
       expect(solarSystem.visible).toBe(true);
-      expect(earth.scale.x).toBeCloseTo(0.62);
+      expect(earth.scale.x).toBeCloseTo(0.52);
+      expect(jupiter.scale.x).toBeCloseTo(0.42);
+      runtime.setRenderCamera(800, 15);
+      expect(earth.scale.x).toBeCloseTo(0.52);
       expect(jupiter.scale.x).toBeCloseTo(0.42);
       runtime.update(1);
       expect(runtime.object.rotation.x).toBeCloseTo(-Math.PI / 4);
+      expect(earth.scale.x).toBeCloseTo(0.62);
 
       runtime.setSolarTexture('earth', {} as HTMLImageElement);
       expect(earthSurface.material.uniforms.surfaceMap!.value).toBeInstanceOf(Texture);
+      runtime.setSolarTexture('earthClouds', {} as HTMLImageElement);
+      expect(earthClouds.material.uniforms.cloudMap!.value).toBeInstanceOf(Texture);
+      runtime.setSolarTexture('earthSpecular', {} as HTMLImageElement);
+      expect(earthSurface.material.uniforms.specularMap!.value).toBeInstanceOf(Texture);
       runtime.setSolarTexture('stars', {} as HTMLImageElement);
       expect(sky.material.map).toBeInstanceOf(Texture);
       expect(sky.visible).toBe(true);
@@ -193,8 +227,31 @@ describe('persistent galaxy background', () => {
       expect(sky.getWorldPosition(new Vector3()).distanceTo(new Vector3(0.01, 0, 15))).toBeCloseTo(0);
       runtime.setRenderEyeOffset(0);
 
-      runtime.setCamera({ x: 0, y: 0, z: 0, distance: 0.8, view: 'horizon', focusBody: 'earth' }, 0);
+      runtime.setCamera({ x: 0, y: 0, z: 0, distance: 0.8, view: 'top', focusBody: 'jupiter' }, 1);
+      runtime.update(1);
+      expect(earth.scale.x).toBeCloseTo(0.62);
+      expect(jupiter.scale.x).toBeCloseTo(0.42);
       runtime.update(1.5);
+      expect(earth.scale.x).toBeCloseTo(0.52);
+      expect(jupiter.scale.x).toBeCloseTo(0.52);
+      runtime.update(2);
+      expect(earth.scale.x).toBeCloseTo(0.42);
+      expect(jupiter.scale.x).toBeCloseTo(0.62);
+
+      runtime.setCamera({ x: 0, y: 0, z: 0, distance: 0.8, view: 'top', focusBody: 'earth' }, 1);
+      runtime.update(2);
+      runtime.update(2.25);
+      expect(earth.scale.x).toBeCloseTo(0.45125);
+      expect(jupiter.scale.x).toBeCloseTo(0.58875);
+      runtime.setCamera({ x: 0, y: 0, z: 0, distance: 0.8, view: 'top', focusBody: 'jupiter' }, 1);
+      runtime.update(2.25);
+      expect(earth.scale.x).toBeCloseTo(0.45125);
+      expect(jupiter.scale.x).toBeCloseTo(0.58875);
+
+      runtime.setCamera({ x: 0, y: 0, z: 0, distance: 0.8, view: 'horizon', focusBody: 'earth' }, 0);
+      runtime.update(2.5);
+      runtime.setCamera({ x: 0, y: 0, z: 0, distance: 0.012, view: 'horizon', focusBody: 'earth' }, 0);
+      expect(runtime.stereoSceneDistance()).toBeCloseTo(0.012);
       runtime.object.updateMatrixWorld(true);
       expect(sky.getWorldPosition(new Vector3()).distanceTo(new Vector3(0, 0, 15))).toBeCloseTo(0);
       const horizonUp = new Vector3(0, 0, 1)
@@ -213,12 +270,13 @@ describe('persistent galaxy background', () => {
       expect(horizonOffset.z).toBeCloseTo(1);
 
       runtime.setCamera({ x: 0, y: 0, z: 0, distance: 0.16, view: 'top', focusBody: 'sol' }, 0);
-      runtime.update(2);
+      runtime.update(3);
       runtime.object.updateMatrixWorld(true);
       const solPosition = runtime.object.getObjectByName('PrismDeck solar body sol')!.getWorldPosition(new Vector3());
-      expect(15 - solPosition.z).toBeCloseTo(0.3);
+      expect(15 - solPosition.z).toBeCloseTo(0.16);
     } finally {
       runtime.dispose();
+      expect(solCoreTextureDisposed).toHaveBeenCalledOnce();
     }
   });
 });
