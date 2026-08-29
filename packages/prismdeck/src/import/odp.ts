@@ -17,6 +17,7 @@ import {
   type DeckElement,
   type DeckLayout,
   type DeckSlide,
+  type ElementAnimationClip,
   type ElementFrame,
   type ElementPlaceholder,
   type ImportResult,
@@ -1523,11 +1524,159 @@ function notesFor(page: Element): string | undefined {
   return value || undefined;
 }
 
-function hasAnimations(page: Element): boolean {
-  return Array.from(page.getElementsByTagName('*')).some((element) => {
-    const name = localName(element);
-    return ['par', 'seq', 'animate', 'animateMotion', 'animateTransform', 'transitionFilter'].includes(name);
-  });
+interface OdpAnimationTiming {
+  trigger: ElementAnimationClip['trigger'];
+  delayMs: number;
+  durationMs: number;
+  easing: 'linear';
+  repeat: number;
+  fill: 'hold' | 'remove';
+}
+
+function odpAnimationWarning(
+  context: OdpContext,
+  slideIndex: number,
+  code: string,
+  message: string,
+  elementId?: string,
+): void {
+  context.warnings.push({ code, severity: 'warning', message, slideIndex, elementId, sourcePart: 'content.xml' });
+}
+
+function parseSmilMs(value: string | undefined): number | undefined {
+  if (value === undefined || value === '') return 0;
+  const match = /^([0-9]+(?:\.[0-9]+)?)(ms|s|min)?$/i.exec(value.trim());
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  const unit = (match[2] ?? 'ms').toLowerCase();
+  const milliseconds = unit === 'min' ? amount * 60_000 : unit === 's' ? amount * 1_000 : amount;
+  return Number.isFinite(milliseconds) && milliseconds >= 0 && milliseconds <= 600_000 ? milliseconds : undefined;
+}
+
+function odpAnimationTrigger(node: Element): { trigger: ElementAnimationClip['trigger']; delayMs: number } | undefined {
+  for (let current: Element | null = node; current; current = current.parentElement) {
+    const nodeType = attributeByLocalName(current, 'node-type');
+    if (nodeType === 'on-click') return { trigger: 'on-click', delayMs: 0 };
+    if (nodeType === 'with-previous') return { trigger: 'with-previous', delayMs: 0 };
+    if (nodeType === 'after-previous') return { trigger: 'after-previous', delayMs: 0 };
+  }
+  const begin = attributeByLocalName(node, 'begin');
+  if (!begin) return { trigger: 'on-enter', delayMs: 0 };
+  const normalized = begin.replaceAll(' ', '');
+  const click = /^click(?:\+(.+))?$/i.exec(normalized);
+  if (click) {
+    const delayMs = parseSmilMs(click[1]);
+    return delayMs === undefined ? undefined : { trigger: 'on-click', delayMs };
+  }
+  if (normalized === 'indefinite') return { trigger: 'on-click', delayMs: 0 };
+  const previous = /^prev\.(begin|end)(?:\+(.+))?$/i.exec(normalized);
+  if (previous) {
+    const delayMs = parseSmilMs(previous[2]);
+    if (delayMs === undefined) return undefined;
+    return { trigger: previous[1] === 'begin' ? 'with-previous' : 'after-previous', delayMs };
+  }
+  const delayMs = parseSmilMs(normalized);
+  return delayMs === undefined ? undefined : { trigger: 'on-enter', delayMs };
+}
+
+function odpAnimationTiming(node: Element): OdpAnimationTiming | undefined {
+  const trigger = odpAnimationTrigger(node);
+  const durationMs = parseSmilMs(attributeByLocalName(node, 'dur') ?? '500ms');
+  const repeatValue = attributeByLocalName(node, 'repeatCount');
+  const repeat = repeatValue === undefined ? 1 : Number(repeatValue);
+  if (!trigger || durationMs === undefined || !Number.isInteger(repeat) || repeat < 1 || repeat > 100) return undefined;
+  return {
+    ...trigger,
+    durationMs,
+    easing: 'linear',
+    repeat,
+    fill: attributeByLocalName(node, 'fill') === 'remove' ? 'remove' : 'hold',
+  };
+}
+
+function smilMotionPath(path: string | undefined): { from: { x: number; y: number }; to: { x: number; y: number } } | undefined {
+  if (!path) return undefined;
+  const number = '(-?(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+))';
+  const match = new RegExp(`^\\s*M\\s*${number}[,\\s]+${number}\\s*L\\s*${number}[,\\s]+${number}\\s*$`, 'i').exec(path);
+  if (!match) return undefined;
+  const values = match.slice(1).map(Number);
+  if (values.some((value) => !Number.isFinite(value) || Math.abs(value) > 10)) return undefined;
+  return { from: { x: values[0]!, y: values[1]! }, to: { x: values[2]!, y: values[3]! } };
+}
+
+function isSmilScale(value: string | undefined, expected: number): boolean {
+  if (!value) return false;
+  const values = value.split(/[\s,]+/).filter(Boolean).map(Number);
+  return values.length > 0 && values.every((candidate) => Number.isFinite(candidate) && Math.abs(candidate - expected) < 0.0001);
+}
+
+function isOdpPulseScale(node: Element): boolean {
+  const from = attributeByLocalName(node, 'from');
+  const to = attributeByLocalName(node, 'to');
+  if (attributeByLocalName(node, 'by') || attributeByLocalName(node, 'values')) return false;
+  return (!from && !to) || (isSmilScale(from, 1) && isSmilScale(to, 1.08));
+}
+
+function mapOdpTimeline(
+  page: Element,
+  context: OdpContext,
+  slideIndex: number,
+  elements: DeckElement[],
+): DeckSlide['timeline'] | undefined {
+  const timingNodes = Array.from(page.getElementsByTagName('*')).filter((element) =>
+    ['animate', 'animateMotion', 'animateTransform', 'transitionFilter'].includes(localName(element)),
+  );
+  const hasTiming = timingNodes.length > 0 || descendants(page, 'par').length > 0 || descendants(page, 'seq').length > 0;
+  if (!hasTiming) return undefined;
+  const elementsByNativeId = new Map(
+    elements.flatMap((element) => element.source?.nativeId ? [[element.source.nativeId, element.id] as const] : []),
+  );
+  const clips: ElementAnimationClip[] = [];
+  for (let index = 0; index < timingNodes.length; index += 1) {
+    const node = timingNodes[index]!;
+    const type = localName(node);
+    const targetNativeId = attributeByLocalName(node, 'targetElement') ?? attributeByLocalName(node, 'target-element');
+    const targetId = targetNativeId ? elementsByNativeId.get(targetNativeId) : undefined;
+    if (!targetId) {
+      odpAnimationWarning(context, slideIndex, 'ODP_ANIMATION_TARGET_UNRESOLVED', `ODF ${type} animation does not resolve to an imported target`);
+      continue;
+    }
+    const fields = odpAnimationTiming(node);
+    if (!fields) {
+      odpAnimationWarning(context, slideIndex, 'ODP_ANIMATION_TIMING_UNSUPPORTED', `ODF ${type} animation uses unsupported timing, repeat, or trigger values`, targetId);
+      continue;
+    }
+    const id = stableId('animation', `${slideIndex}:${targetNativeId}:${index}`);
+    if (type === 'animate') {
+      const property = attributeByLocalName(node, 'attributeName');
+      const from = Number(attributeByLocalName(node, 'from'));
+      const to = Number(attributeByLocalName(node, 'to'));
+      if (property !== 'opacity' || !Number.isFinite(from) || !Number.isFinite(to) || !((from === 0 && to === 1) || (from === 1 && to === 0))) {
+        odpAnimationWarning(context, slideIndex, 'ODP_ANIMATION_EFFECT_UNSUPPORTED', 'Only ODF opacity fades from 0 to 1 or 1 to 0 are imported', targetId);
+        continue;
+      }
+      clips.push({ id, targetId, kind: from === 0 ? 'entrance' : 'exit', effect: 'fade', ...fields });
+    } else if (type === 'animateTransform') {
+      if (attributeByLocalName(node, 'type') !== 'scale' || !isOdpPulseScale(node)) {
+        odpAnimationWarning(context, slideIndex, 'ODP_ANIMATION_EFFECT_UNSUPPORTED', 'Only ODF scale effects from 1 to 1.08 are imported as pulses', targetId);
+        continue;
+      }
+      clips.push({ id, targetId, kind: 'emphasis', effect: 'pulse', ...fields });
+    } else if (type === 'animateMotion') {
+      const path = smilMotionPath(attributeByLocalName(node, 'path'));
+      if (!path) {
+        odpAnimationWarning(context, slideIndex, 'ODP_ANIMATION_PATH_UNSUPPORTED', 'Only simple normalized ODF M/L motion paths are imported', targetId);
+        continue;
+      }
+      clips.push({ id, targetId, kind: 'motion', effect: 'path', path, ...fields });
+    } else {
+      odpAnimationWarning(context, slideIndex, 'ODP_ANIMATION_EFFECT_UNSUPPORTED', 'ODF slide transition filters are not imported as element clips', targetId);
+    }
+  }
+  if (timingNodes.length === 0) {
+    odpAnimationWarning(context, slideIndex, 'ODP_ANIMATION_UNSUPPORTED', 'ODF timing contains no supported element animations');
+  }
+  return clips.length > 0 ? { clips } : undefined;
 }
 
 function mapSlides(context: OdpContext, layouts: DeckLayout[]): DeckSlide[] {
@@ -1535,21 +1684,14 @@ function mapSlides(context: OdpContext, layouts: DeckLayout[]): DeckSlide[] {
   return pages.map((page, index) => {
     const masterName = attributeByLocalName(page, 'master-page-name');
     const layoutId = masterName ? stableId('layout', masterName) : undefined;
-    if (hasAnimations(page)) {
-      context.warnings.push({
-        code: 'ODP_ANIMATION_UNSUPPORTED',
-        severity: 'warning',
-        message: 'ODF animation timing is not imported in this release',
-        slideIndex: index,
-        sourcePart: 'content.xml',
-      });
-    }
     const elements = mapContainer(page, context, 'content.xml');
+    const timeline = mapOdpTimeline(page, context, index, elements);
     return {
       id: stableId('slide', attributeByLocalName(page, 'name') ?? String(index + 1)),
       name: attributeByLocalName(page, 'name') ?? `Slide ${index + 1}`,
       layoutId: layoutId && layouts.some((layout) => layout.id === layoutId) ? layoutId : undefined,
       durationMs: 5_000,
+      ...(timeline ? { timeline } : {}),
       background: backgroundFor(page, context),
       notes: notesFor(page),
       elements,

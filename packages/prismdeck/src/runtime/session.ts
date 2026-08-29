@@ -9,6 +9,7 @@ import type {
   TextElement,
 } from '../document/types';
 import { validateDeckDocument } from '../document/validate';
+import { timelineClickGroupCount, type TimelinePlaybackState } from './timeline';
 
 export type SessionChangeReason = 'deck' | 'slide' | 'content' | 'playback';
 
@@ -54,6 +55,7 @@ export class PresentationSession extends EventTarget {
   private _playing = false;
   private playbackStartedAt = 0;
   private elapsedBeforePlay = 0;
+  private timelineClickTimesMs: number[] = [];
   private loop: boolean;
 
   constructor(deck: LoadedDeck, options: PresentationSessionOptions = {}) {
@@ -81,6 +83,14 @@ export class PresentationSession extends EventTarget {
     return this._playing;
   }
 
+  get timelineTimeMs(): number {
+    return this.elapsedAt(performance.now());
+  }
+
+  get timelineClickTimes(): readonly number[] {
+    return [...this.timelineClickTimesMs];
+  }
+
   setLoop(loop: boolean): void {
     this.loop = loop;
   }
@@ -91,32 +101,44 @@ export class PresentationSession extends EventTarget {
     this._document = cloneDocument(deck.document);
     this.replaceAssets(deck.assets);
     this._currentSlideIndex = this._document.slides.length > 0 ? 0 : -1;
+    this.resetPlaybackClock();
     this.emit('deck');
   }
 
-  goTo(index: number): boolean {
+  goTo(index: number, now = performance.now()): boolean {
     if (!Number.isInteger(index) || index < 0 || index >= this._document.slides.length) return false;
     if (index === this._currentSlideIndex) return true;
     this._currentSlideIndex = index;
-    this.resetPlaybackClock();
+    this.resetPlaybackClock(now);
     this.emit('slide');
     return true;
   }
 
-  next(): boolean {
+  next(now = performance.now()): boolean {
     if (this._document.slides.length === 0) return false;
     const nextIndex = this._currentSlideIndex + 1;
-    if (nextIndex < this._document.slides.length) return this.goTo(nextIndex);
-    if (this.loop) return this.goTo(0);
-    this.pause();
+    if (nextIndex < this._document.slides.length) return this.goTo(nextIndex, now);
+    if (this.loop) return this.goTo(0, now);
+    this.pause(now);
     return false;
   }
 
-  previous(): boolean {
+  /** Reveal one pending explicit-click timeline group, or move to the next slide. */
+  advance(now = performance.now()): boolean {
+    if (!this.currentSlide) return false;
+    if (this.timelineClickTimesMs.length < timelineClickGroupCount(this.currentSlide)) {
+      this.timelineClickTimesMs.push(this.elapsedAt(now));
+      this.emit('playback');
+      return true;
+    }
+    return this.next(now);
+  }
+
+  previous(now = performance.now()): boolean {
     if (this._document.slides.length === 0) return false;
     const previousIndex = this._currentSlideIndex - 1;
-    if (previousIndex >= 0) return this.goTo(previousIndex);
-    if (this.loop) return this.goTo(this._document.slides.length - 1);
+    if (previousIndex >= 0) return this.goTo(previousIndex, now);
+    if (this.loop) return this.goTo(this._document.slides.length - 1, now);
     return false;
   }
 
@@ -129,29 +151,45 @@ export class PresentationSession extends EventTarget {
 
   pause(now = performance.now()): void {
     if (!this._playing) return;
-    this.elapsedBeforePlay += Math.max(0, now - this.playbackStartedAt);
+    this.elapsedBeforePlay = this.elapsedAt(now);
     this._playing = false;
     this.emit('playback');
   }
 
+  seek(timeMs: number, now = performance.now()): boolean {
+    if (!this.currentSlide || !Number.isFinite(timeMs)) return false;
+    this.elapsedBeforePlay = Math.max(0, timeMs);
+    if (this._playing) this.playbackStartedAt = now;
+    this.emit('playback');
+    return true;
+  }
+
+  timelinePlaybackState(now = performance.now()): TimelinePlaybackState {
+    return { timeMs: this.elapsedAt(now), clickTimesMs: [...this.timelineClickTimesMs] };
+  }
+
   tick(now = performance.now()): boolean {
     if (!this._playing || !this.currentSlide) return false;
-    let elapsed = this.elapsedBeforePlay + Math.max(0, now - this.playbackStartedAt);
+    let elapsed = this.elapsedAt(now);
     let advanced = false;
     let remainingAdvances = this._document.slides.length;
     while (
       this.currentSlide &&
-      (this.currentSlide.durationMs === 0 || elapsed >= this.currentSlide.durationMs) &&
+      (this.currentSlide.durationMs === 0
+        ? timelineClickGroupCount(this.currentSlide) === 0
+        : elapsed >= this.currentSlide.durationMs) &&
       remainingAdvances > 0
     ) {
       if (this.currentSlide.durationMs > 0) elapsed -= this.currentSlide.durationMs;
-      if (!this.next()) return advanced;
+      if (!this.next(now)) return advanced;
       advanced = true;
       remainingAdvances -= 1;
       this.playbackStartedAt = now - elapsed;
       this.elapsedBeforePlay = 0;
     }
-    if (remainingAdvances === 0 && this.currentSlide?.durationMs === 0) this.pause(now);
+    if (remainingAdvances === 0 && this.currentSlide?.durationMs === 0 && timelineClickGroupCount(this.currentSlide) === 0) {
+      this.pause(now);
+    }
     return advanced;
   }
 
@@ -204,7 +242,14 @@ export class PresentationSession extends EventTarget {
   updateElementPhysics(elementId: string, physics: ElementPhysics | undefined): boolean {
     const element = this.findElement(elementId);
     if (!element) return false;
+    const previous = element.physics;
     element.physics = physics ? { ...physics } : undefined;
+    try {
+      validateDeckDocument(this._document);
+    } catch {
+      element.physics = previous;
+      return false;
+    }
     this.emit('content', elementId);
     return true;
   }
@@ -222,6 +267,7 @@ export class PresentationSession extends EventTarget {
   removeElement(elementId: string): boolean {
     const elements = this.currentSlide?.elements;
     if (!elements) return false;
+    if (this.currentSlide?.timeline?.clips.some((clip) => clip.targetId === elementId)) return false;
     const index = elements.findIndex((element) => element.id === elementId);
     if (index < 0) return false;
     elements.splice(index, 1);
@@ -248,9 +294,14 @@ export class PresentationSession extends EventTarget {
     for (const [id, asset] of assets) this.assets.set(id, asset);
   }
 
-  private resetPlaybackClock(): void {
+  private resetPlaybackClock(now = performance.now()): void {
     this.elapsedBeforePlay = 0;
-    if (this._playing) this.playbackStartedAt = performance.now();
+    this.timelineClickTimesMs = [];
+    if (this._playing) this.playbackStartedAt = now;
+  }
+
+  private elapsedAt(now: number): number {
+    return this.elapsedBeforePlay + (this._playing ? Math.max(0, now - this.playbackStartedAt) : 0);
   }
 
   private emit(reason: SessionChangeReason, elementId?: string): void {

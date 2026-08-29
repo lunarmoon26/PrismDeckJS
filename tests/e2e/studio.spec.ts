@@ -49,6 +49,38 @@ function semanticDeckArchive(): Buffer {
   }));
 }
 
+function timelineDeckArchive(): Buffer {
+  const transform = { z: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scaleX: 1, scaleY: 1 };
+  const style = {
+    fontFamily: 'Arial, sans-serif', fontSize: 0.06, fontWeight: 700, fontStyle: 'normal',
+    color: '#111111', align: 'left', verticalAlign: 'middle', lineHeight: 1.2,
+  };
+  const text = (id: string, value: string) => ({
+    id, type: 'text', name: value, frame: { x: 0.1, y: 0.25, width: 0.8, height: 0.2 },
+    transform, opacity: 1, visible: true, renderOrder: 0, text: value, style,
+  });
+  const document = {
+    schemaVersion: '0.6.0', id: 'timeline-e2e', kind: 'presentation', metadata: { title: 'Timeline' },
+    size: { width: 1600, height: 900 }, layouts: [], slides: [
+      {
+        id: 'timeline-slide', name: 'Click reveal', durationMs: 0, background: '#F8FAFC', elements: [text('title', 'Reveal first')],
+        timeline: {
+          clips: [{
+            id: 'title-enter', targetId: 'title', kind: 'entrance', effect: 'fade', trigger: 'on-click',
+            delayMs: 0, durationMs: 300, easing: 'linear', repeat: 1, fill: 'hold',
+          }],
+        },
+      },
+      { id: 'next-slide', name: 'After reveal', durationMs: 0, background: '#F8FAFC', elements: [text('next-title', 'Second slide')] },
+    ],
+  };
+  const manifest = { format: 'prismdeck', packageVersion: '0.6.0', document: 'deck.json', assets: [] };
+  return Buffer.from(zipSync({
+    'manifest.json': strToU8(JSON.stringify(manifest)),
+    'deck.json': strToU8(JSON.stringify(document)),
+  }));
+}
+
 test('loads the animated universe deck and exercises studio controls', async ({ page }) => {
   test.setTimeout(90_000);
   const consoleErrors: string[] = [];
@@ -476,6 +508,28 @@ test('renders semantic chart and table surfaces without browser errors', async (
     }
     return { table, chart };
   }), { timeout: 30_000 }).toEqual({ table: true, chart: true });
+  expect(consoleErrors).toEqual([]);
+});
+
+test('reveals click-gated timelines before navigating the Studio slide list', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  await page.goto('/');
+  await expect(page.locator('.stage-message')).toBeHidden({ timeout: 30_000 });
+  await page.getByLabel('Import deck file').setInputFiles({
+    name: 'timeline.prismdeck',
+    mimeType: 'application/vnd.prismdeck+zip',
+    buffer: timelineDeckArchive(),
+  });
+  await expect(page.locator('.slide-card')).toHaveCount(2);
+  await expect(page.locator('.slide-card').first()).toHaveClass(/is-active/);
+
+  await page.getByLabel('Next slide').click();
+  await expect(page.locator('.slide-card').first()).toHaveClass(/is-active/);
+  await page.getByLabel('Next slide').click();
+  await expect(page.locator('.slide-card').nth(1)).toHaveClass(/is-active/);
   expect(consoleErrors).toEqual([]);
 });
 

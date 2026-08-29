@@ -41,6 +41,8 @@
   shift from the Milky Way overview.
 - Matched CyberHUD's translucent Sol shell with a luminous core and corona, and
   made the opening demo slide animate when selected from another slide.
+- Added schema `0.6.0` normalized element animation timelines with deterministic
+  playback, archive/HTML preservation, and focused PPTX/ODP mappings.
 
 ## 0.1.0 - 2026-08-22
 

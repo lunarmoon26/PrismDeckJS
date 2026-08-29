@@ -15,7 +15,8 @@ const contentXml = `<?xml version="1.0" encoding="UTF-8"?>
   xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
   xmlns:xlink="http://www.w3.org/1999/xlink"
   xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
-  xmlns:anim="urn:oasis:names:tc:opendocument:xmlns:animation:1.0">
+  xmlns:anim="urn:oasis:names:tc:opendocument:xmlns:animation:1.0"
+  xmlns:smil="urn:oasis:names:tc:opendocument:xmlns:smil-compatible:1.0">
   <office:automatic-styles>
     <style:style style:name="dp1" style:family="drawing-page">
       <style:drawing-page-properties draw:fill="solid" draw:fill-color="#112233"/>
@@ -85,7 +86,22 @@ const contentXml = `<?xml version="1.0" encoding="UTF-8"?>
           <draw:object xlink:href="./Object 1" xlink:type="simple"/>
         </draw:frame>
         <presentation:notes><draw:frame><draw:text-box><text:p>Speaker note</text:p></draw:text-box></draw:frame></presentation:notes>
-        <anim:par/>
+        <anim:par>
+          <anim:animate smil:targetElement="Title" smil:attributeName="opacity" smil:from="0" smil:to="1" smil:dur="300ms" smil:fill="freeze"/>
+        </anim:par>
+        <anim:par presentation:node-type="after-previous">
+          <anim:animateTransform smil:targetElement="Title" smil:type="scale" smil:dur="160ms" smil:repeatCount="2"/>
+        </anim:par>
+        <anim:par presentation:node-type="after-previous">
+          <anim:animateTransform smil:targetElement="Rectangle" smil:type="scale" smil:by="1.2 1.2" smil:dur="160ms"/>
+        </anim:par>
+        <anim:par presentation:node-type="on-click">
+          <anim:animateMotion smil:targetElement="Title" smil:path="M 0 0 L 0.2 -0.1" smil:dur="400ms"/>
+        </anim:par>
+        <anim:par presentation:node-type="after-previous">
+          <anim:animate smil:targetElement="Title" smil:attributeName="opacity" smil:from="1" smil:to="0" smil:dur="250ms"/>
+        </anim:par>
+        <anim:transitionFilter smil:targetElement="Title"/>
       </draw:page>
     </office:presentation>
   </office:body>
@@ -268,6 +284,21 @@ describe('ODP importer', () => {
       },
     ]);
     expect(result.assets.size).toBe(1);
-    expect(result.report.warnings.map((warning) => warning.code)).toContain('ODP_ANIMATION_UNSUPPORTED');
+    expect(result.document.slides[0]?.timeline?.clips.map((clip) => [clip.kind, clip.trigger])).toEqual([
+      ['entrance', 'on-enter'],
+      ['emphasis', 'after-previous'],
+      ['motion', 'on-click'],
+      ['exit', 'after-previous'],
+    ]);
+    expect(result.document.slides[0]?.timeline?.clips[2]).toMatchObject({
+      effect: 'path', path: { from: { x: 0, y: 0 }, to: { x: 0.2, y: -0.1 } },
+    });
+    expect(result.report.warnings).toContainEqual(expect.objectContaining({
+      code: 'ODP_ANIMATION_EFFECT_UNSUPPORTED',
+      slideIndex: 0,
+      elementId: expect.any(String),
+      sourcePart: 'content.xml',
+    }));
+    expect(result.report.warnings.filter((warning) => warning.code === 'ODP_ANIMATION_EFFECT_UNSUPPORTED')).toHaveLength(2);
   });
 });

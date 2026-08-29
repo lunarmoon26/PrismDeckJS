@@ -33,9 +33,10 @@ Version `0.2.0` introduced these exact chart and table shapes. Package boundarie
 migrate `0.1.0` category/series charts and string-matrix tables into the semantic
 model before validation. Version `0.3.0` adds the optional background scene,
 version `0.4.0` adds bounded solar-system assets plus top/tilt and body-focus
-camera framing, and version `0.5.0` adds bounded Earth cloud and ocean-specular
-asset slots. Newly saved packages always use `0.5.0`; `0.1.0` through `0.4.0`
-packages advance without changing their slide content.
+camera framing, version `0.5.0` adds bounded Earth cloud and ocean-specular asset
+slots, and version `0.6.0` adds normalized per-slide element animation timelines.
+Newly saved packages always use `0.6.0`; `0.1.0` through `0.5.0` packages advance
+without changing their slide content.
 
 ## Planar and extruded elements
 

@@ -38,9 +38,30 @@ function fixture(): LoadedDeck {
         {
            id: 'slide-1',
            name: 'Slide 1',
-           durationMs: 5_000,
-           transition: { type: 'fade', durationMs: 350 },
-           backgroundCamera: {
+            durationMs: 5_000,
+            transition: { type: 'fade', durationMs: 350 },
+            timeline: {
+              clips: [
+                {
+                  id: 'title-enter', targetId: 'title', kind: 'entrance', effect: 'fade', trigger: 'on-enter',
+                  delayMs: 0, durationMs: 300, easing: 'ease-out', repeat: 1, fill: 'hold',
+                },
+                {
+                  id: 'title-pulse', targetId: 'title', kind: 'emphasis', effect: 'pulse', trigger: 'after-previous',
+                  delayMs: 50, durationMs: 160, easing: 'ease-in-out', repeat: 2, fill: 'remove',
+                },
+                {
+                  id: 'title-motion', targetId: 'title', kind: 'motion', effect: 'path', trigger: 'on-click',
+                  delayMs: 0, durationMs: 400, easing: 'linear', repeat: 1, fill: 'hold',
+                  path: { from: { x: 0, y: 0 }, to: { x: 0.08, y: -0.04 } },
+                },
+                {
+                  id: 'title-exit', targetId: 'title', kind: 'exit', effect: 'fade', trigger: 'after-previous',
+                  delayMs: 0, durationMs: 250, easing: 'ease-in', repeat: 1, fill: 'hold',
+                },
+              ],
+            },
+            backgroundCamera: {
              x: 2,
              y: -1,
              z: 0,
@@ -243,6 +264,21 @@ describe('.prismdeck archive', () => {
     expect(loaded.document.slides).toEqual(slides);
   });
 
+  test('advances persisted 0.5.0 documents without adding a timeline', async () => {
+    const previousDocument = JSON.parse(JSON.stringify(fixture().document)) as Record<string, unknown>;
+    previousDocument.schemaVersion = '0.5.0';
+    const slides = previousDocument.slides as Array<Record<string, unknown>>;
+    delete slides[0]!.timeline;
+    const manifest = { format: 'prismdeck', packageVersion: '0.5.0', document: 'deck.json', assets: [] };
+    const loaded = await loadPrismDeck(zipSync({
+      'manifest.json': strToU8(JSON.stringify(manifest)),
+      'deck.json': strToU8(JSON.stringify(previousDocument)),
+    }));
+
+    expect(loaded.document.schemaVersion).toBe(PRISMDECK_SCHEMA_VERSION);
+    expect(loaded.document.slides[0]?.timeline).toBeUndefined();
+  });
+
   test('rejects table cells that exceed the normalized grid', () => {
     const invalid = fixture().document;
     const table = invalid.slides[0]?.elements.find((element) => element.type === 'table');
@@ -307,6 +343,18 @@ describe('.prismdeck archive', () => {
     expect(() => validateDeckDocument(valid)).not.toThrow();
   });
 
+  test('rejects timeline clips with unresolved targets or invalid effects', () => {
+    const unresolved = fixture().document;
+    unresolved.slides[0]!.timeline!.clips[0]!.targetId = 'missing';
+    expect(() => validateDeckDocument(unresolved)).toThrow(/targets missing element/);
+
+    const invalidEffect = fixture().document as unknown as {
+      slides: Array<{ timeline: { clips: Array<{ effect: string }> } }>;
+    };
+    invalidEffect.slides[0]!.timeline.clips[0]!.effect = 'pulse';
+    expect(() => validateDeckDocument(invalidEffect)).toThrow('Invalid PrismDeck document');
+  });
+
   test('requires a solar system when a slide focuses a solar body', () => {
     const invalid = fixture().document;
     delete invalid.backgroundScene!.solarSystem;
@@ -346,7 +394,7 @@ describe('PrismDeck HTML package', () => {
 
     expect(saved.type).toBe('text/html;charset=utf-8');
     expect(html).toContain(DEFAULT_PRISMDECK_CDN_URL);
-    expect(DEFAULT_PRISMDECK_CDN_URL).toBe('https://cdn.jsdelivr.net/npm/prismdeckjs@0.5.0/dist/prism-deck.min.js');
+    expect(DEFAULT_PRISMDECK_CDN_URL).toBe('https://cdn.jsdelivr.net/npm/prismdeckjs@0.6.0/dist/prism-deck.min.js');
     expect(html).toContain('type="application/vnd.prismdeck+zip;base64"');
     expect(html).toContain('id="slide-semantics"');
     expect(html).toContain("document.createElement(cell.header ? 'th' : 'td')");

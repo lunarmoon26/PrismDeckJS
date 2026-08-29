@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://prismdeckjs.dev/schema/prismdeck-0.5.0.json",
+  "$id": "https://prismdeckjs.dev/schema/prismdeck-0.6.0.json",
   "title": "PrismDeck document",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "kind", "metadata", "size", "layouts", "slides"],
   "properties": {
-    "schemaVersion": { "const": "0.5.0" },
+    "schemaVersion": { "const": "0.6.0" },
     "id": { "$ref": "#/$defs/id" },
     "kind": { "enum": ["presentation", "template"] },
     "metadata": {
@@ -466,6 +466,92 @@
         "durationMs": { "type": "number", "minimum": 0, "maximum": 10000 }
       }
     },
+    "motionPathPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number", "minimum": -10, "maximum": 10 },
+        "y": { "type": "number", "minimum": -10, "maximum": 10 }
+      }
+    },
+    "motionPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "$ref": "#/$defs/motionPathPoint" },
+        "to": { "$ref": "#/$defs/motionPathPoint" }
+      }
+    },
+    "elementAnimationClipBase": {
+      "type": "object",
+      "required": ["id", "targetId", "kind", "effect", "trigger", "delayMs", "durationMs", "easing", "repeat", "fill"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "targetId": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["entrance", "emphasis", "exit", "motion"] },
+        "effect": { "enum": ["fade", "pulse", "path"] },
+        "trigger": { "enum": ["on-enter", "with-previous", "after-previous", "on-click"] },
+        "delayMs": { "type": "number", "minimum": 0, "maximum": 600000 },
+        "durationMs": { "type": "number", "minimum": 0, "maximum": 600000 },
+        "easing": { "enum": ["linear", "ease-in", "ease-out", "ease-in-out"] },
+        "repeat": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "fill": { "enum": ["hold", "remove"] }
+      }
+    },
+    "entranceAnimationClip": {
+      "allOf": [
+        { "$ref": "#/$defs/elementAnimationClipBase" },
+        { "type": "object", "properties": { "kind": { "const": "entrance" }, "effect": { "const": "fade" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "emphasisAnimationClip": {
+      "allOf": [
+        { "$ref": "#/$defs/elementAnimationClipBase" },
+        { "type": "object", "properties": { "kind": { "const": "emphasis" }, "effect": { "const": "pulse" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "exitAnimationClip": {
+      "allOf": [
+        { "$ref": "#/$defs/elementAnimationClipBase" },
+        { "type": "object", "properties": { "kind": { "const": "exit" }, "effect": { "const": "fade" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "motionAnimationClip": {
+      "allOf": [
+        { "$ref": "#/$defs/elementAnimationClipBase" },
+        {
+          "type": "object",
+          "required": ["path"],
+          "properties": {
+            "kind": { "const": "motion" },
+            "effect": { "const": "path" },
+            "path": { "$ref": "#/$defs/motionPath" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "elementAnimationClip": {
+      "oneOf": [
+        { "$ref": "#/$defs/entranceAnimationClip" },
+        { "$ref": "#/$defs/emphasisAnimationClip" },
+        { "$ref": "#/$defs/exitAnimationClip" },
+        { "$ref": "#/$defs/motionAnimationClip" }
+      ]
+    },
+    "slideTimeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clips"],
+      "properties": {
+        "clips": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/elementAnimationClip" } }
+      }
+    },
     "backgroundCamera": {
       "type": "object",
       "additionalProperties": false,
@@ -513,6 +599,7 @@
         "layoutId": { "$ref": "#/$defs/id" },
         "durationMs": { "type": "number", "minimum": 0 },
         "transition": { "$ref": "#/$defs/slideTransition" },
+        "timeline": { "$ref": "#/$defs/slideTimeline" },
         "backgroundCamera": { "$ref": "#/$defs/backgroundCamera" },
         "background": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" },
         "notes": { "type": "string" },

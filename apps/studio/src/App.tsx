@@ -512,7 +512,7 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, select, button')) return;
-      if (event.key === 'ArrowRight' || event.key === 'PageDown') player.session.next();
+      if (event.key === 'ArrowRight' || event.key === 'PageDown') player.session.advance();
       else if (event.key === 'ArrowLeft' || event.key === 'PageUp') player.session.previous();
       else if (event.key === ' ') {
         event.preventDefault();
@@ -1042,17 +1042,21 @@ export function App() {
     const canvas = canvasRef.current;
     const bounds = canvas.getBoundingClientRect();
     setBusyMessage(`Rendering ${OUTPUT_PRESETS[outputMode].width} × ${OUTPUT_PRESETS[outputMode].height}…`);
+    const captureTime = performance.now();
+    const resumePlayback = session.isPlaying;
     player.stop();
+    if (resumePlayback) session.pause(captureTime);
     try {
       player.renderer.resizeToPreset(outputMode);
       await player.renderer.whenReady();
-      player.renderer.render();
+      player.renderer.render(captureTime);
       downloadBlob(await canvasBlob(player.renderer.snapshotCanvas()), `${safeName(currentSlide?.name ?? 'slide')}-${outputMode}.png`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not capture this frame');
     } finally {
       if (playerRef.current === player) {
         player.renderer.resize(bounds.width, bounds.height, false);
+        if (resumePlayback) session.play(performance.now());
         player.start();
       }
       setBusyMessage('');
@@ -1278,7 +1282,7 @@ export function App() {
                 aria-label={session?.isPlaying ? 'Pause' : 'Play'}
                 onClick={() => session?.isPlaying ? session.pause() : session?.play()}
               >{session?.isPlaying ? 'Ⅱ' : '▶'}</button>
-              <button type="button" aria-label="Next slide" onClick={() => session?.next()}>→</button>
+              <button type="button" aria-label="Next slide" onClick={() => session?.advance()}>→</button>
             </div>
             <div className="transport__hint">← → navigate <i /> space plays</div>
           </div>

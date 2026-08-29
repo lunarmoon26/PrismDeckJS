@@ -30,6 +30,7 @@ import {
   type DeckElement,
   type DeckLayout,
   type DeckSlide,
+  type ElementAnimationClip,
   type ElementFrame,
   type ImportResult,
   type ImportWarning,
@@ -234,6 +235,7 @@ function sourceBase(
   renderOrder: number,
   sourcePart: string,
   nativeType: string,
+  nativeId = id,
   rotation = 0,
   flipH = false,
   flipV = false,
@@ -247,7 +249,7 @@ function sourceBase(
     opacity: 1,
     visible: true,
     renderOrder,
-    source: { format: 'pptx' as const, part: sourcePart, nativeId: id, nativeType },
+    source: { format: 'pptx' as const, part: sourcePart, nativeId, nativeType },
   };
 }
 
@@ -998,6 +1000,7 @@ function mapSlideNode(
     renderOrder,
     sourcePart,
     node.nodeType,
+    String(node.id),
     node.rotation,
     node.flipH,
     node.flipV,
@@ -1109,7 +1112,7 @@ function mapTemplateNode(
         prompt: textFromXml(element) || undefined,
       }
     : undefined;
-  const common = sourceBase(id, name, 'unsupported', frame, renderOrder, sourcePart, node.localName);
+  const common = sourceBase(id, name, 'unsupported', frame, renderOrder, sourcePart, node.localName, nativeId);
 
   if (node.localName === 'pic') {
     const blip = firstDescendant(element, 'blip');
@@ -1279,6 +1282,7 @@ function flattenTemplateTreeNode(
           renderOrder,
           sourcePart,
           'graphicFrame',
+          cNvPr?.getAttribute('id') ?? String(renderOrder),
           parentMap.rotationZ,
         ),
         type: 'unsupported',
@@ -1348,17 +1352,175 @@ function notesForSlide(context: PptxContext, slidePath: string): string | undefi
   return values.length > 0 ? values.join('\n') : undefined;
 }
 
-function hasRealTiming(context: PptxContext, slidePath: string): boolean {
+interface PptxAnimationTiming {
+  trigger: ElementAnimationClip['trigger'];
+  delayMs: number;
+  durationMs: number;
+  easing: 'linear';
+  repeat: number;
+  fill: 'hold' | 'remove';
+}
+
+function pptxAnimationWarning(
+  context: PptxContext,
+  slideIndex: number,
+  sourcePart: string,
+  code: string,
+  message: string,
+  elementId?: string,
+): void {
+  context.warnings.push({ code, severity: 'warning', message, slideIndex, elementId, sourcePart });
+}
+
+function parsePptxAnimationMs(value: string | null | undefined): number | undefined {
+  if (value === undefined || value === null || value === '') return 0;
+  if (!/^[0-9]+(?:\.[0-9]+)?$/.test(value)) return undefined;
+  const milliseconds = Number(value);
+  return Number.isFinite(milliseconds) && milliseconds >= 0 && milliseconds <= 600_000 ? milliseconds : undefined;
+}
+
+function pptxAnimationTrigger(behavior: Element): ElementAnimationClip['trigger'] | undefined {
+  for (let node: Element | null = behavior; node; node = node.parentElement) {
+    const nodeType = node.getAttribute('nodeType');
+    if (nodeType === 'clickEffect') return 'on-click';
+    if (nodeType === 'withEffect') return 'with-previous';
+    if (nodeType === 'afterEffect') return 'after-previous';
+  }
+  const event = descendants(behavior, 'cond').map((condition) => condition.getAttribute('evt')).find(Boolean);
+  if (!event) return 'on-enter';
+  return event === 'onClick' ? 'on-click' : undefined;
+}
+
+function pptxAnimationTiming(behavior: Element): PptxAnimationTiming | undefined {
+  const timing = firstDescendant(behavior, 'cTn');
+  if (!timing) return undefined;
+  const trigger = pptxAnimationTrigger(behavior);
+  const durationMs = parsePptxAnimationMs(timing.getAttribute('dur') ?? '500');
+  const delayValue = descendants(timing, 'cond').map((condition) => condition.getAttribute('delay')).find((value) => value !== null);
+  const delayMs = parsePptxAnimationMs(delayValue);
+  const repeatValue = timing.getAttribute('repeatCount');
+  const repeat = repeatValue === null ? 1 : Number(repeatValue);
+  if (!trigger || durationMs === undefined || delayMs === undefined || !Number.isInteger(repeat) || repeat < 1 || repeat > 100) {
+    return undefined;
+  }
+  return {
+    trigger,
+    delayMs,
+    durationMs,
+    easing: 'linear',
+    repeat,
+    fill: timing.getAttribute('fill') === 'remove' ? 'remove' : 'hold',
+  };
+}
+
+function pptxMotionPath(path: string | null): { from: { x: number; y: number }; to: { x: number; y: number } } | undefined {
+  if (!path) return undefined;
+  const number = '(-?(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+))';
+  const match = new RegExp(`^\\s*M\\s*${number}[,\\s]+${number}\\s*L\\s*${number}[,\\s]+${number}\\s*(?:E\\s*)?$`, 'i').exec(path);
+  if (!match) return undefined;
+  const values = match.slice(1).map(Number);
+  if (values.some((value) => !Number.isFinite(value) || Math.abs(value) > 10)) return undefined;
+  return { from: { x: values[0]!, y: values[1]! }, to: { x: values[2]!, y: values[3]! } };
+}
+
+function pptxScalePair(node: Element | undefined, expected: number): boolean {
+  if (!node) return false;
+  const values = [node.getAttribute('x'), node.getAttribute('y')].map((value) => Number(value));
+  return values.every((value) => {
+    const normalized = Math.abs(value) > 10 ? value / 100_000 : value;
+    return Number.isFinite(normalized) && Math.abs(normalized - expected) < 0.0001;
+  });
+}
+
+function isPptxPulseScale(behavior: Element): boolean {
+  const by = firstDescendant(behavior, 'by');
+  if (by) return pptxScalePair(by, 1.08);
+  const from = firstDescendant(behavior, 'from');
+  const to = firstDescendant(behavior, 'to');
+  if (from || to) return pptxScalePair(from, 1) && pptxScalePair(to, 1.08);
+  return true;
+}
+
+function mapPptxTimeline(
+  context: PptxContext,
+  slidePath: string,
+  slideIndex: number,
+  elements: DeckElement[],
+): DeckSlide['timeline'] | undefined {
   const xml = decodeXml(context.files, slidePath);
-  if (!xml) return false;
+  if (!xml) return undefined;
   const document = parseXmlDocument(xml, slidePath);
   const timing = firstDescendant(document, 'timing');
-  return Boolean(
-    timing &&
-      Array.from(timing.getElementsByTagName('*')).some((element) =>
-        ['anim', 'animEffect', 'animMotion', 'animRot', 'animScale', 'set', 'cmd'].includes(localName(element)),
-      ),
+  if (!timing) return undefined;
+  const elementsByNativeId = new Map(
+    elements.flatMap((element) => element.source?.nativeId ? [[element.source.nativeId, element.id] as const] : []),
   );
+  const behaviors = Array.from(timing.getElementsByTagName('*')).filter((element) =>
+    ['animEffect', 'animScale', 'animMotion', 'anim', 'animRot', 'set', 'cmd'].includes(localName(element)),
+  );
+  const clips: ElementAnimationClip[] = [];
+  for (let index = 0; index < behaviors.length; index += 1) {
+    const behavior = behaviors[index]!;
+    const type = localName(behavior);
+    const targetNativeId = firstDescendant(behavior, 'spTgt')?.getAttribute('spid') ?? undefined;
+    const targetId = targetNativeId ? elementsByNativeId.get(targetNativeId) : undefined;
+    if (!targetId) {
+      pptxAnimationWarning(
+        context,
+        slideIndex,
+        slidePath,
+        'PPTX_ANIMATION_TARGET_UNRESOLVED',
+        `PowerPoint ${type} animation does not resolve to an imported shape target`,
+      );
+      continue;
+    }
+    const fields = pptxAnimationTiming(behavior);
+    if (!fields) {
+      pptxAnimationWarning(
+        context,
+        slideIndex,
+        slidePath,
+        'PPTX_ANIMATION_TIMING_UNSUPPORTED',
+        `PowerPoint ${type} animation uses unsupported timing, repeat, or trigger values`,
+        targetId,
+      );
+      continue;
+    }
+    const id = stableId('animation', `${slidePath}:${targetNativeId}:${index}`);
+    if (type === 'animEffect') {
+      const filter = behavior.getAttribute('filter')?.trim().toLowerCase();
+      if (filter !== 'fade') {
+        pptxAnimationWarning(context, slideIndex, slidePath, 'PPTX_ANIMATION_EFFECT_UNSUPPORTED', 'Only PowerPoint fade effects are imported', targetId);
+        continue;
+      }
+      clips.push({
+        id,
+        targetId,
+        kind: behavior.getAttribute('transition') === 'out' ? 'exit' : 'entrance',
+        effect: 'fade',
+        ...fields,
+      });
+    } else if (type === 'animScale') {
+      if (!isPptxPulseScale(behavior)) {
+        pptxAnimationWarning(context, slideIndex, slidePath, 'PPTX_ANIMATION_EFFECT_UNSUPPORTED', 'Only PowerPoint scale effects from 1 to 1.08 are imported as pulses', targetId);
+        continue;
+      }
+      clips.push({ id, targetId, kind: 'emphasis', effect: 'pulse', ...fields });
+    } else if (type === 'animMotion') {
+      const path = pptxMotionPath(behavior.getAttribute('path'));
+      if (!path) {
+        pptxAnimationWarning(context, slideIndex, slidePath, 'PPTX_ANIMATION_PATH_UNSUPPORTED', 'Only simple normalized PowerPoint M/L motion paths are imported', targetId);
+        continue;
+      }
+      clips.push({ id, targetId, kind: 'motion', effect: 'path', path, ...fields });
+    } else {
+      pptxAnimationWarning(context, slideIndex, slidePath, 'PPTX_ANIMATION_EFFECT_UNSUPPORTED', `PowerPoint ${type} animation is not in the supported subset`, targetId);
+    }
+  }
+  if (behaviors.length === 0) {
+    pptxAnimationWarning(context, slideIndex, slidePath, 'PPTX_ANIMATION_UNSUPPORTED', 'PowerPoint timing contains no supported element animations');
+  }
+  return clips.length > 0 ? { clips } : undefined;
 }
 
 function backgroundForSlide(context: PptxContext, slideIndex: number): string {
@@ -1407,15 +1569,7 @@ function mapSlides(context: PptxContext, pathToAsset: Map<string, string>, layou
         elements.push(mapSlideNode(node, slide.slidePath, elements.length + 1, context, pathToAsset));
       }
     }
-    if (hasRealTiming(context, slide.slidePath)) {
-      context.warnings.push({
-        code: 'PPTX_ANIMATION_UNSUPPORTED',
-        severity: 'warning',
-        message: 'PowerPoint animation timing is not imported in this release',
-        slideIndex,
-        sourcePart: slide.slidePath,
-      });
-    }
+    const timeline = mapPptxTimeline(context, slide.slidePath, slideIndex, elements);
     const title = elements.find((element) => element.placeholder?.type === 'title' || element.placeholder?.type === 'ctrTitle');
     const titleText = title?.type === 'text' ? title.text : title?.type === 'shape' ? title.text : undefined;
     return {
@@ -1423,6 +1577,7 @@ function mapSlides(context: PptxContext, pathToAsset: Map<string, string>, layou
       name: titleText?.trim() || `Slide ${slideIndex + 1}`,
       layoutId: layoutId && layouts.some((layout) => layout.id === layoutId) ? layoutId : undefined,
       durationMs: 5_000,
+      ...(timeline ? { timeline } : {}),
       background: backgroundForSlide(context, slideIndex),
       notes: notesForSlide(context, slide.slidePath),
       elements,

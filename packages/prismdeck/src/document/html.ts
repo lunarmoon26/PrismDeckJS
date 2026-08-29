@@ -242,11 +242,12 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
         title.textContent = player.session.currentSlide?.name ?? player.session.document.metadata.title;
         count.textContent = total === 0 ? '0 / 0' : (index + 1) + ' / ' + total;
         previous.disabled = index <= 0;
-        next.disabled = index < 0 || index >= total - 1;
+         const hasPendingTimelineClick = player.session.timelineClickTimes.length < PrismDeck.timelineClickGroupCount(player.session.currentSlide);
+         next.disabled = index < 0 || (index >= total - 1 && !hasPendingTimelineClick);
         syncSemantics();
       };
       previous.addEventListener('click', () => player.session.previous());
-      next.addEventListener('click', () => player.session.next());
+       next.addEventListener('click', () => player.session.advance());
       const setOutputMode = (mode) => {
         player.renderer.setOutputMode(mode);
         outputMode.value = mode;
@@ -259,7 +260,7 @@ function viewerHtml(deck: LoadedDeck, archiveBase64: string, runtimeUrl: string)
           event.preventDefault();
           setOutputMode(mode);
         } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') player.session.previous();
-        else if (event.key === 'ArrowRight' || event.key === 'PageDown') player.session.next();
+         else if (event.key === 'ArrowRight' || event.key === 'PageDown') player.session.advance();
       });
       const resize = () => player.renderer.resize(canvas.clientWidth, canvas.clientHeight, false);
       const observer = new ResizeObserver(resize);

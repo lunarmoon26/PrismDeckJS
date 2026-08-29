@@ -41,6 +41,7 @@ import {
   type TextStyle,
 } from '../document/types';
 import { PresentationSession, type SessionChangeDetail } from '../runtime/session';
+import { evaluateSlideTimeline } from '../runtime/timeline';
 import {
   backgroundSceneSignature,
   createBackgroundScene,
@@ -107,7 +108,7 @@ interface WebGLSlideTransition {
   startTimeMs: number;
   durationMs: number;
   startPositionX: number;
-  materials: Map<Material, { opacity: number; transparent: boolean }>;
+  opacity: number;
 }
 
 export interface SlideTransitionFrame {
@@ -688,6 +689,7 @@ export class DeckRenderer {
     if (this.disposed) return;
     this.updateWebGLSlideTransition(timestamp);
     const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    this.updateTimeline(timestamp, reducedMotion);
     this.backgroundScene?.update(reducedMotion ? 0 : timestamp / 1_000);
     this.configureBackgroundCameras();
     this.renderer.setScissorTest(false);
@@ -1132,7 +1134,7 @@ export class DeckRenderer {
         startTimeMs: performance.now(),
         durationMs: transition.durationMs,
         startPositionX: this.slideGroup.position.x,
-        materials: new Map(),
+        opacity: 1,
       };
       this.updateWebGLSlideTransition(this.activeWebGLTransition.startTimeMs);
       return;
@@ -1167,26 +1169,7 @@ export class DeckRenderer {
     const slideWidth = SLIDE_HEIGHT * (size.width / size.height);
     const frame = slideTransitionFrame(transition.type, timestamp - transition.startTimeMs, transition.durationMs, slideWidth);
     this.slideGroup.position.x = transition.startPositionX + frame.offsetX;
-    for (const object of this.elementObjects.values()) {
-      const element = object.userData.element as DeckElement | undefined;
-      object.traverse((child) => {
-        if (!(child instanceof Mesh)) return;
-        const childMaterials = Array.isArray(child.material) ? child.material : [child.material];
-        for (const material of childMaterials) {
-          let original = transition.materials.get(material);
-          if (!original) {
-            original = { opacity: element?.opacity ?? material.opacity, transparent: material.transparent };
-            transition.materials.set(material, original);
-          }
-          const transparent = original.transparent || frame.opacity < 1;
-          if (material.transparent !== transparent) {
-            material.transparent = transparent;
-            material.needsUpdate = true;
-          }
-          material.opacity = original.opacity * frame.opacity;
-        }
-      });
-    }
+    transition.opacity = frame.opacity;
     if (frame.done) this.finishWebGLSlideTransition();
   }
 
@@ -1194,14 +1177,49 @@ export class DeckRenderer {
     const transition = this.activeWebGLTransition;
     if (!transition) return;
     this.slideGroup.position.x = transition.startPositionX;
-    for (const [material, original] of transition.materials) {
-      if (material.transparent !== original.transparent) {
-        material.transparent = original.transparent;
-        material.needsUpdate = true;
-      }
-      material.opacity = original.opacity;
-    }
     this.activeWebGLTransition = undefined;
+  }
+
+  private updateTimeline(timestamp: number, reducedMotion: boolean): void {
+    const slide = this.session?.currentSlide;
+    const size = this.activeDeckSize;
+    if (!slide || !size) return;
+    const states = evaluateSlideTimeline(slide, this.session!.timelinePlaybackState(timestamp), reducedMotion);
+    const slideWidth = SLIDE_HEIGHT * (size.width / size.height);
+    const transitionOpacity = this.activeWebGLTransition?.opacity ?? 1;
+    for (const [elementId, object] of this.elementObjects) {
+      const element = object.userData.element as DeckElement | undefined;
+      if (!element) continue;
+      const state = states.get(elementId);
+      if (state) {
+        const world = elementWorldTransform(element, size);
+        object.visible = element.visible && state.visible;
+        object.position.set(
+          world.position.x + state.offsetX * slideWidth,
+          world.position.y - state.offsetY * SLIDE_HEIGHT,
+          world.position.z,
+        );
+        object.quaternion.set(world.rotation.x, world.rotation.y, world.rotation.z, world.rotation.w);
+        object.scale.set(element.transform.scaleX * state.scale, element.transform.scaleY * state.scale, 1);
+      }
+      const opacity = element.opacity * (state?.opacity ?? 1) * transitionOpacity;
+      object.traverse((child) => {
+        if (!(child instanceof Mesh)) return;
+        const childMaterials = Array.isArray(child.material) ? child.material : [child.material];
+        for (const material of childMaterials) {
+          const baseTransparent = material.userData.prismdeckTimelineBaseTransparent;
+          if (typeof baseTransparent !== 'boolean') material.userData.prismdeckTimelineBaseTransparent = material.transparent;
+          const transparent = Boolean(material.userData.prismdeckTimelineBaseTransparent) || opacity < 1;
+          if (material.transparent !== transparent) {
+            material.transparent = transparent;
+            material.needsUpdate = true;
+          }
+          material.opacity = opacity;
+        }
+      });
+      const entry = this.overlayEntries.find((candidate) => candidate.object === object);
+      if (entry) entry.opacity = element.opacity * (state?.opacity ?? 1);
+    }
   }
 
   private syncBackgroundScene(scene: DeckBackgroundScene | undefined, size: DeckSize, replace: boolean): boolean {
@@ -1377,6 +1395,7 @@ export class DeckRenderer {
     const topLeft = project(-entry.width / 2, entry.height / 2);
     const topRight = project(entry.width / 2, entry.height / 2);
     const bottomLeft = project(-entry.width / 2, -entry.height / 2);
+    if (!entry.object.visible || entry.opacity <= 0) return;
     context.save();
     context.beginPath();
     context.rect(viewportX, viewportY, viewportWidth, viewportHeight);
