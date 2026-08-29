@@ -1,10 +1,11 @@
-export const PRISMDECK_SCHEMA_VERSION = '0.5.0' as const;
+export const PRISMDECK_SCHEMA_VERSION = '0.6.0' as const;
 export const LEGACY_PRISMDECK_SCHEMA_VERSION = '0.1.0' as const;
-export const PREVIOUS_PRISMDECK_SCHEMA_VERSION = '0.4.0' as const;
+export const PREVIOUS_PRISMDECK_SCHEMA_VERSION = '0.5.0' as const;
 export const LEGACY_PRISMDECK_SCHEMA_VERSIONS = [
   LEGACY_PRISMDECK_SCHEMA_VERSION,
   '0.2.0',
   '0.3.0',
+  '0.4.0',
   PREVIOUS_PRISMDECK_SCHEMA_VERSION,
 ] as const;
 export const PRISMDECK_MIME_TYPE = 'application/vnd.prismdeck+zip' as const;
@@ -332,6 +333,65 @@ export interface SlideTransition {
   durationMs: number;
 }
 
+export type ElementAnimationKind = 'entrance' | 'emphasis' | 'exit' | 'motion';
+export type ElementAnimationTrigger = 'on-enter' | 'with-previous' | 'after-previous' | 'on-click';
+export type ElementAnimationEasing = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
+export type ElementAnimationFill = 'hold' | 'remove';
+
+export interface MotionPathPoint {
+  /** Slide-width and slide-height fractions relative to the authored frame. */
+  x: number;
+  y: number;
+}
+
+export interface MotionPath {
+  from: MotionPathPoint;
+  to: MotionPathPoint;
+}
+
+interface ElementAnimationClipBase {
+  id: string;
+  targetId: string;
+  kind: ElementAnimationKind;
+  trigger: ElementAnimationTrigger;
+  delayMs: number;
+  durationMs: number;
+  easing: ElementAnimationEasing;
+  repeat: number;
+  fill: ElementAnimationFill;
+}
+
+export interface EntranceAnimationClip extends ElementAnimationClipBase {
+  kind: 'entrance';
+  effect: 'fade';
+}
+
+export interface EmphasisAnimationClip extends ElementAnimationClipBase {
+  kind: 'emphasis';
+  effect: 'pulse';
+}
+
+export interface ExitAnimationClip extends ElementAnimationClipBase {
+  kind: 'exit';
+  effect: 'fade';
+}
+
+export interface MotionAnimationClip extends ElementAnimationClipBase {
+  kind: 'motion';
+  effect: 'path';
+  path: MotionPath;
+}
+
+export type ElementAnimationClip =
+  | EntranceAnimationClip
+  | EmphasisAnimationClip
+  | ExitAnimationClip
+  | MotionAnimationClip;
+
+export interface SlideTimeline {
+  clips: ElementAnimationClip[];
+}
+
 export interface BackgroundCamera {
   x: number;
   y: number;
@@ -350,6 +410,7 @@ export interface DeckSlide {
   layoutId?: string;
   durationMs: number;
   transition?: SlideTransition;
+  timeline?: SlideTimeline;
   backgroundCamera?: BackgroundCamera;
   background: string;
   notes?: string;

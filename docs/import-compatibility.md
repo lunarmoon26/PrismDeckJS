@@ -9,9 +9,10 @@ visible rectangular custom fallback; unsupported media and chart effects use
 structured warnings.
 
 ODP import targets `draw:page`, master-page dimensions, text frames, images,
-rectangles, ellipses, lines, groups, semantic tables, and packaged ODF chart
-objects with local cached data. ODF animations and unsupported embedded object
-types remain structured source warnings.
+rectangles, ellipses, lines, groups, semantic tables, packaged ODF chart objects
+with local cached data, and the focused normalized animation subset documented in
+[`animations.md`](animations.md). Unsupported animation and embedded object types
+remain structured source warnings.
 
 ## Feature matrix
 
@@ -30,7 +31,8 @@ visible fallback or the supported subset and adds a structured import warning.
 | Charts | Classic bar/column, line, area, pie, doughnut, radar, scatter, bubble, stock, surface, combinations, secondary axes, cached data, labels, legend, markers, number formats, and blanks supported | Packaged bar/column, line, area, pie/ring, radar, scatter, bubble, stock, and surface charts with local table data, titles, legends, axes, and common styles supported |
 | Masters/layouts | Masters, layouts, themes, and zero-slide templates supported | Master pages, page dimensions, and zero-slide templates supported |
 | Speaker notes | Supported | Supported |
-| Source animations/transitions | Not imported; warning emitted when timing exists | Not imported; warning emitted when timing exists |
+| Source element animations | Focused fade, pulse, and simple motion subset; unsupported timing warns | Focused fade, pulse, and simple motion subset; unsupported timing warns |
+| Source slide transitions | Not imported; warning emitted when timing exists | Not imported; warning emitted when timing exists |
 
 All imported elements are planar at `z: 0` by default. Importers preserve source
 stacking with `renderOrder` and do not invent spatial depth or thickness. This

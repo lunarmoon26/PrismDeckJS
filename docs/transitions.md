@@ -23,7 +23,8 @@ With a persistent background, planar destination content transitions on its
 Canvas2D overlay. Spatial or mixed destination content transitions through the
 active WebGL slide group, leaving the persistent scene unchanged.
 
-The transition is persisted in `.prismdeck` and single-file HTML output. PPTX
-and ODP transition and element-animation timing are not mapped in this release;
-importers continue to report unsupported timing instead of silently claiming
-fidelity.
+The transition is persisted in `.prismdeck` and single-file HTML output. Element
+animation timelines are a separate per-slide contract; their ordering, motion,
+reduced-motion fallback, and focused source mappings are documented in
+[`animations.md`](animations.md). Source slide transitions remain unsupported and
+continue to produce structured warnings rather than silently claiming fidelity.

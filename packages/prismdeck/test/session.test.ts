@@ -82,6 +82,54 @@ describe('PresentationSession', () => {
     expect(session.isPlaying).toBe(false);
   });
 
+  test('retains legacy zero-duration auto-navigation when a timeline has no click groups', () => {
+    const session = new PresentationSession(templateDeck());
+    const first = session.createSlide('layout-title', { durationMs: 0 });
+    session.createSlide('layout-title', { durationMs: 100 });
+    first.timeline = {
+      clips: [{
+        id: 'enter-title', targetId: first.elements[0]!.id, kind: 'entrance', effect: 'fade', trigger: 'on-enter',
+        delayMs: 0, durationMs: 100, easing: 'linear', repeat: 1, fill: 'hold',
+      }],
+    };
+
+    session.play(1_000);
+    expect(session.tick(1_000)).toBe(true);
+    expect(session.currentSlideIndex).toBe(1);
+  });
+
+  test('seeks and pauses one timeline clock while advance reveals click groups before navigating', () => {
+    const session = new PresentationSession(templateDeck());
+    const first = session.createSlide('layout-title', { durationMs: 0 });
+    session.createSlide('layout-title', { durationMs: 0 });
+    first.timeline = {
+      clips: [{
+        id: 'reveal-title', targetId: first.elements[0]!.id, kind: 'entrance', effect: 'fade', trigger: 'on-click',
+        delayMs: 0, durationMs: 100, easing: 'linear', repeat: 1, fill: 'hold',
+      }],
+    };
+    expect(session.updateElementPhysics(first.elements[0]!.id, {
+      body: 'fixed', shape: 'cuboid', density: 1, restitution: 0.2, friction: 0.5,
+    })).toBe(false);
+    expect(session.removeElement(first.elements[0]!.id)).toBe(false);
+    session.play(1_000);
+    expect(session.tick(1_120)).toBe(false);
+    expect(session.currentSlideIndex).toBe(0);
+    expect(session.advance(1_120)).toBe(true);
+    expect(session.currentSlideIndex).toBe(0);
+    expect(session.timelineClickTimes).toEqual([120]);
+
+    expect(session.seek(40, 1_120)).toBe(true);
+    session.pause(1_140);
+    expect(session.timelinePlaybackState(2_000).timeMs).toBe(60);
+    session.play(2_000);
+    expect(session.timelinePlaybackState(2_040).timeMs).toBe(100);
+
+    expect(session.advance(2_040)).toBe(true);
+    expect(session.currentSlideIndex).toBe(1);
+    expect(session.timelinePlaybackState(2_040)).toMatchObject({ timeMs: 0, clickTimesMs: [] });
+  });
+
   test('adds validated elements to the active slide', () => {
     const session = new PresentationSession(templateDeck());
     session.createSlide('layout-title');

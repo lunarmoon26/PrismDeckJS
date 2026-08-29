@@ -9,6 +9,7 @@ import {
   type ChartAxis,
   type ChartElement,
   type ChartPlot,
+  type DeckSlide,
   type DeckDocument,
   type DeckElement,
   type TableElement,
@@ -219,6 +220,41 @@ function assertElementSpecific(element: DeckElement): void {
   }
 }
 
+function assertSlideTimeline(slide: DeckSlide): void {
+  if (!slide.timeline) return;
+  const elementIds = new Set<string>();
+  for (const element of slide.elements) {
+    if (elementIds.has(element.id)) throw new DeckValidationError(`Slide ${slide.id} has duplicate element ID: ${element.id}`);
+    elementIds.add(element.id);
+  }
+  const clipIds = new Set<string>();
+  const entranceTargetIds = new Set<string>();
+  let previousClip = false;
+  let encounteredClickTrigger = false;
+  for (const clip of slide.timeline.clips) {
+    if (clipIds.has(clip.id)) throw new DeckValidationError(`Slide ${slide.id} has duplicate timeline clip ID: ${clip.id}`);
+    clipIds.add(clip.id);
+    const target = slide.elements.find((element) => element.id === clip.targetId);
+    if (!target) throw new DeckValidationError(`Timeline clip ${clip.id} targets missing element: ${clip.targetId}`);
+    if (!target.visible) throw new DeckValidationError(`Timeline clip ${clip.id} targets an authored-hidden element: ${clip.targetId}`);
+    if (target.physics) throw new DeckValidationError(`Timeline clip ${clip.id} targets a physics element: ${clip.targetId}`);
+    if (clip.kind === 'entrance') {
+      if (entranceTargetIds.has(clip.targetId)) {
+        throw new DeckValidationError(`Slide ${slide.id} has multiple entrance clips for element: ${clip.targetId}`);
+      }
+      entranceTargetIds.add(clip.targetId);
+    }
+    if (!previousClip && (clip.trigger === 'with-previous' || clip.trigger === 'after-previous')) {
+      throw new DeckValidationError(`Timeline clip ${clip.id} has ${clip.trigger} without a preceding clip`);
+    }
+    if (encounteredClickTrigger && clip.trigger === 'on-enter') {
+      throw new DeckValidationError(`Timeline clip ${clip.id} cannot enter after an explicit click group`);
+    }
+    if (clip.trigger === 'on-click') encounteredClickTrigger = true;
+    previousClip = true;
+  }
+}
+
 export function validateDeckDocument(value: unknown): asserts value is DeckDocument {
   if (!validateSchema(value)) {
     throw new DeckValidationError('Invalid PrismDeck document', validateSchema.errors ?? []);
@@ -229,6 +265,7 @@ export function validateDeckDocument(value: unknown): asserts value is DeckDocum
   }
   for (const slide of value.slides) {
     for (const element of slide.elements) assertElementSpecific(element);
+    assertSlideTimeline(slide);
   }
 }
 

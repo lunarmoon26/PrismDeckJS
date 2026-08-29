@@ -17,8 +17,8 @@ only.
 | Import adapters | Parse PPTX, PowerPoint layouts, ODP, or `.prismdeck` into one normalized model and an import report. |
 | Document package | Own the versioned JSON contract, validation, ZIP limits, and binary asset lifecycle. |
 | HTML package | Embeds one validated document archive and loads the version-matched browser runtime from a CDN. |
-| Presentation session | Own slide order, navigation, timing, and the single authoritative state. |
-| Deck renderer | Own the Canvas2D presentation surface, persistent declarative background, active-slide Three.js group, clear color, transitions, textures, cameras, picking, resize, capture, context loss, and disposal. |
+| Presentation session | Own slide order, navigation, timing, element-animation timeline state, and the single authoritative state. |
+| Deck renderer | Own the Canvas2D presentation surface, persistent declarative background, active-slide Three.js group, clear color, transitions, normalized timeline evaluation, textures, cameras, picking, resize, capture, context loss, and disposal. |
 | Chart adapter | Converts normalized chart semantics into a fixed-size, non-animated ECharts SVG, then disposes the transient chart instance. |
 | Semantic viewer layer | Mirrors active-slide chart data and presentation tables as inert screen-reader HTML without affecting visual layout. |
 | Stereo output | Project the same scene through calibrated left and right off-axis cameras. |
@@ -48,6 +48,12 @@ SDK remains the package root export, while agent hosts use explicit subpaths.
 
 Physics advances once per accepted frame before either eye is rendered. Stereo
 never duplicates document state or simulation.
+
+Element animation clips use the same session clock and are evaluated once before
+either eye renders. They remain source-free validated document data; PPTX and ODP
+adapters map only the documented subset and report unsupported timing with source
+context. Timeline ordering, reduced-motion behavior, and capture policy are
+defined in [`animations.md`](animations.md).
 
 An optional declarative background scene is owned at deck scope in a separate
 Three.js scene beside the active-slide group. The player advances it from the
@@ -112,3 +118,5 @@ The monorepo agent-adapter boundary is recorded in
 [`adr/0004-agent-adapter-boundary.md`](adr/0004-agent-adapter-boundary.md).
 Persistent background ownership is recorded in
 [`adr/0005-persistent-background-scenes.md`](adr/0005-persistent-background-scenes.md).
+Normalized timeline ownership is recorded in
+[`adr/0006-normalized-element-animation-timelines.md`](adr/0006-normalized-element-animation-timelines.md).

@@ -6,6 +6,7 @@ export * from './version';
 export * from './import/index';
 export * from './runtime/session';
 export * from './runtime/player';
+export * from './runtime/timeline';
 export * from './render/stereo';
 export * from './render/renderer';
 export * from './physics/rapier';

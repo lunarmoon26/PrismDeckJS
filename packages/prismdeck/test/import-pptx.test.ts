@@ -61,6 +61,24 @@ const slide = `<?xml version="1.0" encoding="UTF-8"?>
   </p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:sld>`;
 
+const timelineSlide = slide.replace(
+  '</p:sld>',
+  `<p:timing><p:tnLst><p:par><p:cTn nodeType="tmRoot"><p:childTnLst>
+    <p:animEffect filter="fade"><p:cBhvr><p:cTn dur="300" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn><p:tgtEl><p:spTgt spid="2"/></p:tgtEl></p:cBhvr></p:animEffect>
+    <p:par><p:cTn nodeType="afterEffect"><p:childTnLst>
+      <p:animScale><p:cBhvr><p:cTn dur="160" repeatCount="2"/><p:tgtEl><p:spTgt spid="2"/></p:tgtEl></p:cBhvr></p:animScale>
+    </p:childTnLst></p:cTn></p:par>
+    <p:par><p:cTn nodeType="clickEffect"><p:childTnLst>
+      <p:animMotion path="M 0 0 L 0.2 -0.1 E"><p:cBhvr><p:cTn dur="400"/><p:tgtEl><p:spTgt spid="2"/></p:tgtEl></p:cBhvr></p:animMotion>
+      <p:par><p:cTn nodeType="afterEffect"><p:childTnLst>
+        <p:animEffect filter="fade" transition="out"><p:cBhvr><p:cTn dur="250"/><p:tgtEl><p:spTgt spid="2"/></p:tgtEl></p:cBhvr></p:animEffect>
+      </p:childTnLst></p:cTn></p:par>
+    </p:childTnLst></p:cTn></p:par>
+    <p:animRot><p:cBhvr><p:cTn dur="120"/><p:tgtEl><p:spTgt spid="2"/></p:tgtEl></p:cBhvr></p:animRot>
+    <p:animScale><p:by x="120000" y="120000"/><p:cBhvr><p:cTn dur="120"/><p:tgtEl><p:spTgt spid="2"/></p:tgtEl></p:cBhvr></p:animScale>
+  </p:childTnLst></p:cTn></p:par></p:tnLst></p:timing></p:sld>`,
+);
+
 const semanticSlide = `<?xml version="1.0" encoding="UTF-8"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
   <p:cSld><p:spTree>
@@ -178,7 +196,7 @@ function fixture(
   includeSlide: boolean,
   variant: 'basic' | 'semantic' = 'basic',
   chartXml = combinationChart,
-  slideXml = semanticSlide,
+  slideXml?: string,
 ): ArrayBuffer {
   const files: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(
@@ -198,7 +216,7 @@ function fixture(
     'ppt/theme/theme1.xml': strToU8(theme),
   };
   if (includeSlide) {
-    files['ppt/slides/slide1.xml'] = strToU8(variant === 'semantic' ? slideXml : slide);
+    files['ppt/slides/slide1.xml'] = strToU8(slideXml ?? (variant === 'semantic' ? semanticSlide : slide));
     files['ppt/slides/_rels/slide1.xml.rels'] = strToU8(
       variant === 'semantic'
         ? `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/></Relationships>`
@@ -241,6 +259,29 @@ describe('PPTX importer', () => {
     expect(result.document.kind).toBe('template');
     expect(result.document.slides).toHaveLength(0);
     expect(result.document.layouts).toHaveLength(1);
+  });
+
+  test('maps the focused PowerPoint timeline subset and reports unsupported effects', async () => {
+    const result = await importPresentation(fixture(true, 'basic', combinationChart, timelineSlide));
+    validateDeckDocument(result.document);
+
+    const timeline = result.document.slides[0]?.timeline;
+    expect(timeline?.clips.map((clip) => [clip.kind, clip.trigger])).toEqual([
+      ['entrance', 'on-enter'],
+      ['emphasis', 'after-previous'],
+      ['motion', 'on-click'],
+      ['exit', 'after-previous'],
+    ]);
+    expect(timeline?.clips[2]).toMatchObject({
+      effect: 'path', path: { from: { x: 0, y: 0 }, to: { x: 0.2, y: -0.1 } },
+    });
+    expect(result.document.slides[0]?.elements[0]?.source?.nativeId).toBe('2');
+    expect(result.report.warnings).toContainEqual(expect.objectContaining({
+      code: 'PPTX_ANIMATION_EFFECT_UNSUPPORTED',
+      slideIndex: 0,
+      sourcePart: 'ppt/slides/slide1.xml',
+    }));
+    expect(result.report.warnings.filter((warning) => warning.code === 'PPTX_ANIMATION_EFFECT_UNSUPPORTED')).toHaveLength(2);
   });
 
   test('maps semantic DrawingML tables and combination charts', async () => {
